@@ -6,6 +6,9 @@ set -euo pipefail
 # Pre-hardened, multi-agent OpenClaw setup by NanoFlow
 # ============================================================
 
+# Security: restrict file creation to owner-only by default
+umask 077
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}"
@@ -42,6 +45,78 @@ random_token() {
 }
 
 # ============================================================
+# Input validation
+# ============================================================
+
+# Validate names: alphanumeric, hyphens, underscores, spaces only
+validate_name() {
+  local name="$1"
+  local label="${2:-Name}"
+  if [[ ! "$name" =~ ^[a-zA-Z0-9\ _-]+$ ]]; then
+    error "Invalid $label: must contain only letters, numbers, spaces, hyphens, and underscores"
+    return 1
+  fi
+  echo "$name"
+}
+
+# Validate agent ID: alphanumeric, hyphens, underscores only (no spaces, no path chars)
+validate_agent_id() {
+  local id="$1"
+  if [[ ! "$id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    error "Invalid agent ID: must contain only letters, numbers, hyphens, and underscores"
+    return 1
+  fi
+  # Reject path traversal patterns
+  if [[ "$id" == *".."* || "$id" == *"/"* ]]; then
+    error "Invalid agent ID: path traversal detected"
+    return 1
+  fi
+  echo "$id"
+}
+
+# Validate Discord snowflake IDs: 17-19 digit numbers
+validate_snowflake() {
+  local id="$1"
+  local label="${2:-ID}"
+  if [[ ! "$id" =~ ^[0-9]{17,20}$ ]]; then
+    error "Invalid Discord $label: must be a 17-20 digit number"
+    return 1
+  fi
+  echo "$id"
+}
+
+# Validate timezone format
+validate_timezone() {
+  local tz="$1"
+  if [[ ! "$tz" =~ ^[a-zA-Z_]+/[a-zA-Z_]+(/[a-zA-Z_]+)?$ ]] && [[ "$tz" != "UTC" ]]; then
+    warn "Timezone '$tz' doesn't match expected format (e.g., America/Los_Angeles). Using anyway."
+  fi
+  echo "$tz"
+}
+
+# Validate path is under expected parent (prevent path traversal)
+validate_path_under() {
+  local path="$1"
+  local parent="$2"
+  local resolved
+  resolved=$(realpath -m "$path" 2>/dev/null || echo "$path")
+  if [[ "$resolved" != "$parent"* ]]; then
+    error "Path traversal detected: $path resolves outside $parent"
+    return 1
+  fi
+  echo "$resolved"
+}
+
+# Check for symlink attacks before writing
+safe_write_check() {
+  local filepath="$1"
+  if [[ -L "$filepath" ]]; then
+    error "SECURITY: $filepath is a symbolic link. Aborting to prevent symlink attack."
+    exit 1
+  fi
+}
+
+# ============================================================
 # Pre-flight checks
 # ============================================================
 
@@ -68,6 +143,13 @@ preflight() {
   success "OpenClaw $(openclaw --version 2>/dev/null | head -1)"
 
   mkdir -p "$OPENCLAW_DIR"
+
+  # Verify state dir is owned by current user
+  if [[ "$(stat -c '%u' "$OPENCLAW_DIR" 2>/dev/null || stat -f '%u' "$OPENCLAW_DIR" 2>/dev/null)" != "$(id -u)" ]]; then
+    error "$OPENCLAW_DIR is not owned by you. Possible security issue."
+    exit 1
+  fi
+
   success "State directory: $OPENCLAW_DIR"
   echo ""
 }
@@ -80,13 +162,16 @@ collect_user_info() {
   echo -e "${BOLD}--- Your Info ---${NC}"
   echo ""
 
-  ask "Your name"
-  read -r USER_NAME
-  USER_NAME="${USER_NAME:-User}"
+  while true; do
+    ask "Your name"
+    read -r USER_NAME
+    USER_NAME="${USER_NAME:-User}"
+    if validate_name "$USER_NAME" "name" >/dev/null 2>&1; then break; fi
+  done
 
   ask "Your timezone (e.g., America/Los_Angeles, Europe/London)"
   read -r USER_TIMEZONE
-  USER_TIMEZONE="${USER_TIMEZONE:-UTC}"
+  USER_TIMEZONE=$(validate_timezone "${USER_TIMEZONE:-UTC}")
 
   echo ""
 }
@@ -99,9 +184,12 @@ collect_agent_info() {
   echo -e "${BOLD}--- Main Agent ---${NC}"
   echo ""
 
-  ask "Agent name (e.g., Atlas, Nova, Jarvis)"
-  read -r AGENT_NAME
-  AGENT_NAME="${AGENT_NAME:-Assistant}"
+  while true; do
+    ask "Agent name (letters, numbers, spaces, hyphens only)"
+    read -r AGENT_NAME
+    AGENT_NAME="${AGENT_NAME:-Assistant}"
+    if validate_name "$AGENT_NAME" "agent name" >/dev/null 2>&1; then break; fi
+  done
 
   ask "Agent pronouns (e.g., they/them, she/her, he/him)"
   read -r AGENT_PRONOUNS
@@ -142,21 +230,30 @@ collect_agent_info() {
 
   # Collect specialist agent names if deploying
   if [ "$DEPLOY_COMMS" = true ]; then
-    ask "Comms agent name (default: Knox)"
-    read -r COMMS_NAME
-    COMMS_NAME="${COMMS_NAME:-Knox}"
+    while true; do
+      ask "Comms agent name (default: Knox)"
+      read -r COMMS_NAME
+      COMMS_NAME="${COMMS_NAME:-Knox}"
+      if validate_name "$COMMS_NAME" "comms agent name" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   if [ "$DEPLOY_RESEARCH" = true ]; then
-    ask "Research agent name (default: Trace)"
-    read -r RESEARCH_NAME
-    RESEARCH_NAME="${RESEARCH_NAME:-Trace}"
+    while true; do
+      ask "Research agent name (default: Trace)"
+      read -r RESEARCH_NAME
+      RESEARCH_NAME="${RESEARCH_NAME:-Trace}"
+      if validate_name "$RESEARCH_NAME" "research agent name" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   if [ "$DEPLOY_SECURITY" = true ]; then
-    ask "Security agent name (default: Sentinel)"
-    read -r SECURITY_NAME
-    SECURITY_NAME="${SECURITY_NAME:-Sentinel}"
+    while true; do
+      ask "Security agent name (default: Sentinel)"
+      read -r SECURITY_NAME
+      SECURITY_NAME="${SECURITY_NAME:-Sentinel}"
+      if validate_name "$SECURITY_NAME" "security agent name" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   echo ""
@@ -216,29 +313,47 @@ collect_keys() {
   read -rs DISCORD_TOKEN
   echo ""
 
-  ask "Discord guild (server) ID"
-  read -r DISCORD_GUILD
+  while true; do
+    ask "Discord guild (server) ID"
+    read -r DISCORD_GUILD
+    if validate_snowflake "$DISCORD_GUILD" "guild ID" >/dev/null 2>&1; then break; fi
+  done
 
-  ask "Your Discord user ID"
-  read -r DISCORD_OWNER
+  while true; do
+    ask "Your Discord user ID"
+    read -r DISCORD_OWNER
+    if validate_snowflake "$DISCORD_OWNER" "user ID" >/dev/null 2>&1; then break; fi
+  done
 
   # Channel IDs
-  ask "Main agent channel ID (the channel your bot talks in)"
-  read -r DISCORD_MAIN_CHANNEL
+  while true; do
+    ask "Main agent channel ID"
+    read -r DISCORD_MAIN_CHANNEL
+    if validate_snowflake "$DISCORD_MAIN_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+  done
 
   if [ "$DEPLOY_COMMS" = true ]; then
-    ask "Comms agent channel ID"
-    read -r DISCORD_COMMS_CHANNEL
+    while true; do
+      ask "Comms agent channel ID"
+      read -r DISCORD_COMMS_CHANNEL
+      if validate_snowflake "$DISCORD_COMMS_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   if [ "$DEPLOY_RESEARCH" = true ]; then
-    ask "Research agent channel ID"
-    read -r DISCORD_RESEARCH_CHANNEL
+    while true; do
+      ask "Research agent channel ID"
+      read -r DISCORD_RESEARCH_CHANNEL
+      if validate_snowflake "$DISCORD_RESEARCH_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   if [ "$DEPLOY_SECURITY" = true ]; then
-    ask "Security agent channel ID"
-    read -r DISCORD_SECURITY_CHANNEL
+    while true; do
+      ask "Security agent channel ID"
+      read -r DISCORD_SECURITY_CHANNEL
+      if validate_snowflake "$DISCORD_SECURITY_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+    done
   fi
 
   echo ""
@@ -277,7 +392,14 @@ collect_keys() {
 generate_env() {
   info "Generating $ENV_FILE..."
 
+  # Security: check for symlink attacks
+  safe_write_check "$ENV_FILE"
+
   GATEWAY_TOKEN=$(random_token)
+
+  # Create file with restricted permissions first, then write
+  touch "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
 
   cat > "$ENV_FILE" << ENVEOF
 # ============================================================
@@ -314,7 +436,6 @@ EMBEDDING_API_KEY=${OPENAI_SKILLS_KEY:-}
 GATEWAY_AUTH_TOKEN=${GATEWAY_TOKEN}
 ENVEOF
 
-  chmod 600 "$ENV_FILE"
   success "Environment file created (permissions: 600)"
 }
 
@@ -325,51 +446,74 @@ ENVEOF
 generate_config() {
   info "Generating $CONFIG_FILE..."
 
+  # Security: check for symlink attacks
+  safe_write_check "$CONFIG_FILE"
+
   local WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
   mkdir -p "$WORKSPACE_DIR"
 
-  # Start from template
-  local CONFIG
-  CONFIG=$(cat "$TEMPLATES_DIR/openclaw.template.json")
+  # Pass all user inputs as environment variables to Python (not bash substitution)
+  # This prevents shell injection via the Python heredoc
+  export CB_TEMPLATES_DIR="$TEMPLATES_DIR"
+  export CB_WORKSPACE_DIR="$WORKSPACE_DIR"
+  export CB_OPENCLAW_DIR="$OPENCLAW_DIR"
+  export CB_DISCORD_GUILD="$DISCORD_GUILD"
+  export CB_DISCORD_OWNER="$DISCORD_OWNER"
+  export CB_DISCORD_MAIN_CHANNEL="$DISCORD_MAIN_CHANNEL"
+  export CB_DEPLOY_COMMS="$DEPLOY_COMMS"
+  export CB_DEPLOY_RESEARCH="$DEPLOY_RESEARCH"
+  export CB_DEPLOY_SECURITY="$DEPLOY_SECURITY"
+  export CB_LLM_PROVIDER="$LLM_PROVIDER"
+  export CB_OPENAI_SKILLS_KEY="${OPENAI_SKILLS_KEY:-}"
+  export CB_ELEVENLABS_KEY="${ELEVENLABS_KEY:-}"
 
-  # Replace placeholders
-  CONFIG=$(echo "$CONFIG" | sed "s|__WORKSPACE_DIR__|$WORKSPACE_DIR|g")
-  CONFIG=$(echo "$CONFIG" | sed "s|__DISCORD_GUILD_ID__|$DISCORD_GUILD|g")
-  CONFIG=$(echo "$CONFIG" | sed "s|__DISCORD_OWNER_ID__|$DISCORD_OWNER|g")
+  # Only export specialist names/channels if deploying
+  if [ "$DEPLOY_COMMS" = true ]; then
+    export CB_COMMS_NAME="$COMMS_NAME"
+    export CB_DISCORD_COMMS_CHANNEL="$DISCORD_COMMS_CHANNEL"
+  fi
+  if [ "$DEPLOY_RESEARCH" = true ]; then
+    export CB_RESEARCH_NAME="$RESEARCH_NAME"
+    export CB_DISCORD_RESEARCH_CHANNEL="$DISCORD_RESEARCH_CHANNEL"
+  fi
+  if [ "$DEPLOY_SECURITY" = true ]; then
+    export CB_SECURITY_NAME="$SECURITY_NAME"
+    export CB_DISCORD_SECURITY_CHANNEL="$DISCORD_SECURITY_CHANNEL"
+  fi
 
-  # Add main channel to allowed channels
-  CONFIG=$(echo "$CONFIG" | python3 -c "
-import json, sys
-config = json.load(sys.stdin)
-guild = config['channels']['discord']['guilds']['$DISCORD_GUILD']
-guild['channels']['$DISCORD_MAIN_CHANNEL'] = {'allow': True}
-" 2>/dev/null || echo "$CONFIG")
+  # Use single-quoted PYEOF to prevent ALL bash substitution in the heredoc
+  python3 << 'PYEOF' > "$CONFIG_FILE"
+import json, os
 
-  # Use python3 to properly build the config with agent tiers
-  python3 << PYEOF > "$CONFIG_FILE"
-import json
+templates_dir = os.environ['CB_TEMPLATES_DIR']
+workspace_dir = os.environ['CB_WORKSPACE_DIR']
+openclaw_dir = os.environ['CB_OPENCLAW_DIR']
+guild_id = os.environ['CB_DISCORD_GUILD']
+owner_id = os.environ['CB_DISCORD_OWNER']
+main_channel = os.environ['CB_DISCORD_MAIN_CHANNEL']
+deploy_comms = os.environ['CB_DEPLOY_COMMS'] == 'true'
+deploy_research = os.environ['CB_DEPLOY_RESEARCH'] == 'true'
+deploy_security = os.environ['CB_DEPLOY_SECURITY'] == 'true'
+llm_provider = os.environ['CB_LLM_PROVIDER']
+openai_skills_key = os.environ.get('CB_OPENAI_SKILLS_KEY', '')
+elevenlabs_key = os.environ.get('CB_ELEVENLABS_KEY', '')
 
-with open("$TEMPLATES_DIR/openclaw.template.json") as f:
+with open(os.path.join(templates_dir, "openclaw.template.json")) as f:
     config = json.load(f)
 
 # Fix workspace
-config['agents']['list'][0]['workspace'] = "$WORKSPACE_DIR"
+config['agents']['list'][0]['workspace'] = workspace_dir
 
-# Fix guild/owner placeholders
-guild_id = "$DISCORD_GUILD"
-owner_id = "$DISCORD_OWNER"
-
+# Fix guild/owner
 config['channels']['discord']['allowFrom'] = [owner_id]
 config['channels']['discord']['execApprovals']['approvers'] = [owner_id]
 
-# Replace guild placeholder
-old_guilds = config['channels']['discord']['guilds']
 config['channels']['discord']['guilds'] = {
     guild_id: {
         "requireMention": False,
         "users": [owner_id],
         "channels": {
-            "$DISCORD_MAIN_CHANNEL": {"allow": True}
+            main_channel: {"allow": True}
         }
     }
 }
@@ -380,72 +524,78 @@ config['bindings'] = [{
     "match": {"channel": "discord", "guildId": guild_id}
 }]
 
-# Agent allow list starts with main
+# Agent allow list
 allow_agents = ["main"]
 
-# Add specialist agents based on tier
-if "$DEPLOY_COMMS" == "true":
-    comms_id = "${COMMS_NAME:-Knox}".lower()
-    comms_workspace = "$OPENCLAW_DIR/workspace-" + comms_id
+# Specialist agents
+if deploy_comms:
+    comms_name = os.environ.get('CB_COMMS_NAME', 'Knox')
+    comms_channel = os.environ.get('CB_DISCORD_COMMS_CHANNEL', '')
+    comms_id = comms_name.lower().replace(' ', '-')
+    comms_workspace = os.path.join(openclaw_dir, f"workspace-{comms_id}")
     allow_agents.append(comms_id)
 
     config['agents']['list'].append({
         "id": comms_id,
-        "name": "${COMMS_NAME:-Knox}",
+        "name": comms_name,
         "workspace": comms_workspace,
-        "agentDir": "$OPENCLAW_DIR/agents/" + comms_id + "/agent",
+        "agentDir": os.path.join(openclaw_dir, "agents", comms_id, "agent"),
         "model": {"primary": "copilot/claude-sonnet-4.5"},
-        "identity": {"name": "${COMMS_NAME:-Knox}", "emoji": "📡"}
+        "identity": {"name": comms_name, "emoji": "\U0001f4e1"}
     })
 
     config['bindings'].insert(0, {
         "agentId": comms_id,
-        "match": {"channel": "discord", "peer": {"kind": "channel", "id": "${DISCORD_COMMS_CHANNEL:-}"}}
+        "match": {"channel": "discord", "peer": {"kind": "channel", "id": comms_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels']["${DISCORD_COMMS_CHANNEL:-}"] = {"allow": True}
+    config['channels']['discord']['guilds'][guild_id]['channels'][comms_channel] = {"allow": True}
 
-if "$DEPLOY_RESEARCH" == "true":
-    research_id = "${RESEARCH_NAME:-Trace}".lower()
-    research_workspace = "$OPENCLAW_DIR/workspace-" + research_id
+if deploy_research:
+    research_name = os.environ.get('CB_RESEARCH_NAME', 'Trace')
+    research_channel = os.environ.get('CB_DISCORD_RESEARCH_CHANNEL', '')
+    research_id = research_name.lower().replace(' ', '-')
+    research_workspace = os.path.join(openclaw_dir, f"workspace-{research_id}")
     allow_agents.append(research_id)
 
     config['agents']['list'].append({
         "id": research_id,
-        "name": "${RESEARCH_NAME:-Trace}",
+        "name": research_name,
         "workspace": research_workspace,
-        "agentDir": "$OPENCLAW_DIR/agents/" + research_id + "/agent",
+        "agentDir": os.path.join(openclaw_dir, "agents", research_id, "agent"),
         "model": {"primary": "copilot/claude-sonnet-4.5"},
-        "identity": {"name": "${RESEARCH_NAME:-Trace}", "emoji": "🔍"}
+        "identity": {"name": research_name, "emoji": "\U0001f50d"}
     })
 
     config['bindings'].insert(0, {
         "agentId": research_id,
-        "match": {"channel": "discord", "peer": {"kind": "channel", "id": "${DISCORD_RESEARCH_CHANNEL:-}"}}
+        "match": {"channel": "discord", "peer": {"kind": "channel", "id": research_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels']["${DISCORD_RESEARCH_CHANNEL:-}"] = {"allow": True}
+    config['channels']['discord']['guilds'][guild_id]['channels'][research_channel] = {"allow": True}
 
-if "$DEPLOY_SECURITY" == "true":
-    security_id = "${SECURITY_NAME:-Sentinel}".lower()
-    security_workspace = "$OPENCLAW_DIR/workspace-" + security_id
+if deploy_security:
+    security_name = os.environ.get('CB_SECURITY_NAME', 'Sentinel')
+    security_channel = os.environ.get('CB_DISCORD_SECURITY_CHANNEL', '')
+    security_id = security_name.lower().replace(' ', '-')
+    security_workspace = os.path.join(openclaw_dir, f"workspace-{security_id}")
     allow_agents.append(security_id)
 
     config['agents']['list'].append({
         "id": security_id,
-        "name": "${SECURITY_NAME:-Sentinel}",
+        "name": security_name,
         "workspace": security_workspace,
-        "agentDir": "$OPENCLAW_DIR/agents/" + security_id + "/agent",
+        "agentDir": os.path.join(openclaw_dir, "agents", security_id, "agent"),
         "model": {"primary": "copilot/claude-sonnet-4.5"},
-        "identity": {"name": "${SECURITY_NAME:-Sentinel}", "emoji": "🛡️"}
+        "identity": {"name": security_name, "emoji": "\U0001f6e1\ufe0f"}
     })
 
     config['bindings'].insert(0, {
         "agentId": security_id,
-        "match": {"channel": "discord", "peer": {"kind": "channel", "id": "${DISCORD_SECURITY_CHANNEL:-}"}}
+        "match": {"channel": "discord", "peer": {"kind": "channel", "id": security_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels']["${DISCORD_SECURITY_CHANNEL:-}"] = {"allow": True}
+    config['channels']['discord']['guilds'][guild_id]['channels'][security_channel] = {"allow": True}
 
 # Set allow lists
 config['agents']['list'][0]['subagents']['allowAgents'] = allow_agents
@@ -457,11 +607,10 @@ if len(allow_agents) > 1:
     }
 
 # LLM provider config
-provider = "$LLM_PROVIDER"
-if provider == "openai":
+if llm_provider == "openai":
     config['models']['providers'] = {
         "openai": {
-            "apiKey": "\${OPENAI_API_KEY}",
+            "apiKey": "${OPENAI_API_KEY}",
             "models": [
                 {"id": "gpt-4o", "name": "GPT-4o", "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 16384},
                 {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "input": ["text", "image"], "contextWindow": 128000, "maxTokens": 16384}
@@ -470,10 +619,10 @@ if provider == "openai":
     }
     config['agents']['defaults']['model']['primary'] = "openai/gpt-4o"
     config['agents']['defaults']['heartbeat']['model'] = "openai/gpt-4o-mini"
-elif provider == "anthropic":
+elif llm_provider == "anthropic":
     config['models']['providers'] = {
         "anthropic": {
-            "apiKey": "\${ANTHROPIC_API_KEY}",
+            "apiKey": "${ANTHROPIC_API_KEY}",
             "models": [
                 {"id": "claude-sonnet-4-5-20250514", "name": "Claude Sonnet 4.5", "input": ["text", "image"], "contextWindow": 200000, "maxTokens": 16384}
             ]
@@ -482,18 +631,25 @@ elif provider == "anthropic":
     config['agents']['defaults']['model']['primary'] = "anthropic/claude-sonnet-4-5-20250514"
 
 # Skills with keys
-if "${OPENAI_SKILLS_KEY:-}":
-    config['skills']['entries']['openai-image-gen'] = {"apiKey": "\${OPENAI_API_KEY}"}
-    config['skills']['entries']['openai-whisper-api'] = {"apiKey": "\${OPENAI_API_KEY}"}
+if openai_skills_key:
+    config['skills']['entries']['openai-image-gen'] = {"apiKey": "${OPENAI_API_KEY}"}
+    config['skills']['entries']['openai-whisper-api'] = {"apiKey": "${OPENAI_API_KEY}"}
 
-if "${ELEVENLABS_KEY:-}":
-    config['skills']['entries']['sag'] = {"apiKey": "\${ELEVENLABS_API_KEY}"}
+if elevenlabs_key:
+    config['skills']['entries']['sag'] = {"apiKey": "${ELEVENLABS_API_KEY}"}
 
 print(json.dumps(config, indent=2))
 PYEOF
 
   chmod 600 "$CONFIG_FILE"
   success "Config generated with \${VAR} references (permissions: 600)"
+
+  # Clean up exported vars
+  unset CB_TEMPLATES_DIR CB_WORKSPACE_DIR CB_OPENCLAW_DIR CB_DISCORD_GUILD CB_DISCORD_OWNER
+  unset CB_DISCORD_MAIN_CHANNEL CB_DEPLOY_COMMS CB_DEPLOY_RESEARCH CB_DEPLOY_SECURITY
+  unset CB_LLM_PROVIDER CB_OPENAI_SKILLS_KEY CB_ELEVENLABS_KEY
+  unset CB_COMMS_NAME CB_DISCORD_COMMS_CHANNEL CB_RESEARCH_NAME CB_DISCORD_RESEARCH_CHANNEL
+  unset CB_SECURITY_NAME CB_DISCORD_SECURITY_CHANNEL 2>/dev/null || true
 }
 
 # ============================================================
@@ -506,60 +662,81 @@ deploy_workspaces() {
   local WORKSPACE_DIR="$OPENCLAW_DIR/workspace"
   mkdir -p "$WORKSPACE_DIR/memory"
 
-  # Main workspace — copy and personalize
+  # Main workspace — copy and personalize using Python for safe substitution
   for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md; do
     if [ -f "$TEMPLATES_DIR/workspace/$f" ]; then
-      sed -e "s|__AGENT_NAME__|$AGENT_NAME|g" \
-          -e "s|__AGENT_PRONOUNS__|$AGENT_PRONOUNS|g" \
-          -e "s|__AGENT_EMOJI__|$AGENT_EMOJI|g" \
-          -e "s|__USER_NAME__|$USER_NAME|g" \
-          -e "s|__USER_TIMEZONE__|$USER_TIMEZONE|g" \
-          "$TEMPLATES_DIR/workspace/$f" > "$WORKSPACE_DIR/$f"
+      python3 -c "
+import sys
+content = open(sys.argv[1]).read()
+replacements = {
+    '__AGENT_NAME__': sys.argv[3],
+    '__AGENT_PRONOUNS__': sys.argv[4],
+    '__AGENT_EMOJI__': sys.argv[5],
+    '__USER_NAME__': sys.argv[6],
+    '__USER_TIMEZONE__': sys.argv[7],
+}
+for k, v in replacements.items():
+    content = content.replace(k, v)
+open(sys.argv[2], 'w').write(content)
+" "$TEMPLATES_DIR/workspace/$f" "$WORKSPACE_DIR/$f" \
+  "$AGENT_NAME" "$AGENT_PRONOUNS" "$AGENT_EMOJI" "$USER_NAME" "$USER_TIMEZONE"
     fi
   done
   success "Main workspace: $WORKSPACE_DIR"
 
-  # Specialist workspaces
-  if [ "$DEPLOY_COMMS" = true ]; then
-    local COMMS_ID
-    COMMS_ID=$(echo "$COMMS_NAME" | tr '[:upper:]' '[:lower:]')
-    local COMMS_WS="$OPENCLAW_DIR/workspace-$COMMS_ID"
-    mkdir -p "$COMMS_WS/memory"
-    mkdir -p "$OPENCLAW_DIR/agents/$COMMS_ID/agent"
+  # Deploy specialist workspaces
+  deploy_specialist_workspace() {
+    local agent_name="$1"
+    local agent_type="$2"  # comms, research, security
 
-    cp "$TEMPLATES_DIR/workspace/AGENTS.md" "$COMMS_WS/AGENTS.md"
-    sed "s|__AGENT_NAME__|$COMMS_NAME|g" "$TEMPLATES_DIR/agents/comms/SOUL.md" > "$COMMS_WS/SOUL.md"
-    sed -e "s|__USER_NAME__|$USER_NAME|g" -e "s|__USER_TIMEZONE__|$USER_TIMEZONE|g" "$TEMPLATES_DIR/workspace/USER.md" > "$COMMS_WS/USER.md"
-    cp "$TEMPLATES_DIR/workspace/TOOLS.md" "$COMMS_WS/TOOLS.md"
-    success "Comms workspace: $COMMS_WS"
+    # Use bash parameter expansion for lowercase (no external commands)
+    local agent_id="${agent_name,,}"
+    # Replace spaces with hyphens
+    agent_id="${agent_id// /-}"
+
+    # Validate the ID
+    agent_id=$(validate_agent_id "$agent_id") || { error "Invalid agent name produced invalid ID"; exit 1; }
+
+    local agent_ws="$OPENCLAW_DIR/workspace-$agent_id"
+
+    # Validate path is under OPENCLAW_DIR
+    validate_path_under "$agent_ws" "$OPENCLAW_DIR" >/dev/null || { error "Path traversal detected"; exit 1; }
+
+    mkdir -p "$agent_ws/memory"
+    mkdir -p "$OPENCLAW_DIR/agents/$agent_id/agent"
+
+    cp "$TEMPLATES_DIR/workspace/AGENTS.md" "$agent_ws/AGENTS.md"
+
+    # Safe substitution via Python
+    python3 -c "
+import sys
+content = open(sys.argv[1]).read()
+content = content.replace('__AGENT_NAME__', sys.argv[3])
+open(sys.argv[2], 'w').write(content)
+" "$TEMPLATES_DIR/agents/$agent_type/SOUL.md" "$agent_ws/SOUL.md" "$agent_name"
+
+    python3 -c "
+import sys
+content = open(sys.argv[1]).read()
+content = content.replace('__USER_NAME__', sys.argv[3])
+content = content.replace('__USER_TIMEZONE__', sys.argv[4])
+open(sys.argv[2], 'w').write(content)
+" "$TEMPLATES_DIR/workspace/USER.md" "$agent_ws/USER.md" "$USER_NAME" "$USER_TIMEZONE"
+
+    cp "$TEMPLATES_DIR/workspace/TOOLS.md" "$agent_ws/TOOLS.md"
+    success "$agent_type workspace: $agent_ws"
+  }
+
+  if [ "$DEPLOY_COMMS" = true ]; then
+    deploy_specialist_workspace "$COMMS_NAME" "comms"
   fi
 
   if [ "$DEPLOY_RESEARCH" = true ]; then
-    local RESEARCH_ID
-    RESEARCH_ID=$(echo "$RESEARCH_NAME" | tr '[:upper:]' '[:lower:]')
-    local RESEARCH_WS="$OPENCLAW_DIR/workspace-$RESEARCH_ID"
-    mkdir -p "$RESEARCH_WS/memory"
-    mkdir -p "$OPENCLAW_DIR/agents/$RESEARCH_ID/agent"
-
-    cp "$TEMPLATES_DIR/workspace/AGENTS.md" "$RESEARCH_WS/AGENTS.md"
-    sed "s|__AGENT_NAME__|$RESEARCH_NAME|g" "$TEMPLATES_DIR/agents/research/SOUL.md" > "$RESEARCH_WS/SOUL.md"
-    sed -e "s|__USER_NAME__|$USER_NAME|g" -e "s|__USER_TIMEZONE__|$USER_TIMEZONE|g" "$TEMPLATES_DIR/workspace/USER.md" > "$RESEARCH_WS/USER.md"
-    cp "$TEMPLATES_DIR/workspace/TOOLS.md" "$RESEARCH_WS/TOOLS.md"
-    success "Research workspace: $RESEARCH_WS"
+    deploy_specialist_workspace "$RESEARCH_NAME" "research"
   fi
 
   if [ "$DEPLOY_SECURITY" = true ]; then
-    local SECURITY_ID
-    SECURITY_ID=$(echo "$SECURITY_NAME" | tr '[:upper:]' '[:lower:]')
-    local SECURITY_WS="$OPENCLAW_DIR/workspace-$SECURITY_ID"
-    mkdir -p "$SECURITY_WS/memory"
-    mkdir -p "$OPENCLAW_DIR/agents/$SECURITY_ID/agent"
-
-    cp "$TEMPLATES_DIR/workspace/AGENTS.md" "$SECURITY_WS/AGENTS.md"
-    sed "s|__AGENT_NAME__|$SECURITY_NAME|g" "$TEMPLATES_DIR/agents/security/SOUL.md" > "$SECURITY_WS/SOUL.md"
-    sed -e "s|__USER_NAME__|$USER_NAME|g" -e "s|__USER_TIMEZONE__|$USER_TIMEZONE|g" "$TEMPLATES_DIR/workspace/USER.md" > "$SECURITY_WS/USER.md"
-    cp "$TEMPLATES_DIR/workspace/TOOLS.md" "$SECURITY_WS/TOOLS.md"
-    success "Security workspace: $SECURITY_WS"
+    deploy_specialist_workspace "$SECURITY_NAME" "security"
   fi
 }
 
@@ -628,8 +805,10 @@ main() {
       info "Aborting. Your existing config is untouched."
       exit 0
     fi
-    cp "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%s)"
-    success "Backup created"
+    # Use mktemp for unpredictable backup filename
+    BACKUP=$(mktemp "${CONFIG_FILE}.bak.XXXXXX")
+    cp "$CONFIG_FILE" "$BACKUP"
+    success "Backup created at $BACKUP"
     echo ""
   fi
 
