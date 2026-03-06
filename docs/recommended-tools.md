@@ -1,8 +1,127 @@
 # Recommended Tools
 
-Clawdboss includes integration guides for vetted OpenClaw ecosystem tools. These are optional but recommended.
+Clawdboss includes integration guides for vetted OpenClaw ecosystem tools. All are optional — the setup wizard will prompt you for each one.
 
-## Clawmetry — Observability Dashboard
+---
+
+## MCP Servers
+
+### OCTAVE Protocol — Token Compression
+
+**What:** Structured document format for LLM communication. 3-20x token compression with schema validation and deterministic artifacts for multi-agent handoffs.
+
+**Install:** Prompted during setup, or manually:
+```bash
+uv venv ~/.octave-venv && uv pip install octave-mcp
+# OR: python3 -m venv ~/.octave-venv && ~/.octave-venv/bin/pip install octave-mcp
+```
+
+**Register:**
+```bash
+mcporter config add octave --command ~/.octave-venv/bin/octave-mcp-server --transport stdio
+```
+
+---
+
+### Graphthulhu — Knowledge Graph Memory
+
+**What:** Typed knowledge graph for structured agent memory. Define entities (Person, Project, Task, Event), relationships, and constraints. Shared knowledge base across all agents.
+
+**Install:** Prompted during setup, or manually:
+```bash
+# Via cargo (if Rust installed)
+cargo install graphthulhu
+
+# OR download pre-built binary from GitHub releases
+curl -fsSL -o ~/.local/bin/graphthulhu \
+  https://github.com/scottozolmedia/graphthulhu/releases/latest/download/graphthulhu-linux-x86_64
+chmod +x ~/.local/bin/graphthulhu
+```
+
+**Register:**
+```bash
+# Create an Obsidian vault directory
+mkdir -p ~/.openclaw/vault
+mcporter config add graphthulhu --command "graphthulhu serve --backend obsidian --vault ~/.openclaw/vault"
+```
+
+**Links:**
+- GitHub: <https://github.com/scottozolmedia/graphthulhu>
+
+---
+
+### ApiTap — API Discovery
+
+**What:** Intercepts web API traffic during browsing and generates portable skill files so agents can call APIs directly instead of scraping. Headless API discovery — agents learn how APIs work by watching you use them.
+
+**Install:** Prompted during setup, or manually:
+```bash
+npm install -g @apitap/core
+```
+
+**Register:**
+```bash
+mcporter config add apitap --command apitap-mcp --transport stdio
+```
+
+**Links:**
+- npm: `@apitap/core`
+
+---
+
+## Python Tools
+
+### Scrapling — Anti-Bot Web Scraping
+
+**What:** High-performance Python web scraping with anti-bot bypass. Adaptive selectors that survive site redesigns. Structured data extraction from JS-rendered and anti-bot-protected pages.
+
+**Install:** Prompted during setup, or manually:
+```bash
+pip install scrapling
+```
+
+**Usage:** Agents use it as a Python library through the `scrapling` OpenClaw skill. No MCP registration needed — the skill handles everything.
+
+**Links:**
+- GitHub: <https://github.com/D4Vinci/Scrapling>
+- PyPI: `scrapling`
+
+---
+
+## Skills
+
+### GitHub — Issues, PRs, CI/CD
+
+**What:** Full GitHub integration via the `gh` CLI. Create issues, review PRs, search code, check CI runs, and automate DevOps workflows.
+
+**Install:** Prompted during setup, or manually:
+```bash
+# Install gh CLI (https://cli.github.com)
+# Then install the skill:
+npx clawhub@latest install github
+```
+
+**Authenticate:**
+```bash
+gh auth login
+```
+
+---
+
+### Playwright MCP — Browser Automation
+
+**What:** Navigate websites, click elements, fill forms, take screenshots. Full browser automation for complex web workflows that go beyond simple scraping.
+
+**Install:** Prompted during setup, or manually:
+```bash
+npx clawhub@latest install playwright-mcp
+```
+
+---
+
+## Observability & Security
+
+### Clawmetry — Observability Dashboard
 
 **What:** Real-time monitoring dashboard showing token costs, sessions, cron jobs, sub-agents, memory, and live message flow. Zero config — auto-detects everything.
 

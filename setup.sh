@@ -874,7 +874,6 @@ install_octave() {
     return
   fi
 
-  # Check for uv (preferred) or python3 venv support
   local OCTAVE_VENV="$HOME/.octave-venv"
 
   if command -v uv &>/dev/null; then
@@ -892,29 +891,248 @@ install_octave() {
     return
   fi
 
-  # Verify installation
   if [ ! -f "$OCTAVE_VENV/bin/octave-mcp-server" ]; then
     warn "OCTAVE installation failed — binary not found. Skipping."
     return
   fi
 
-  # Add to mcporter config
-  if command -v mcporter &>/dev/null; then
-    local MCPORTER_CONFIG="$OPENCLAW_DIR/workspace/config/mcporter.json"
-    mkdir -p "$(dirname "$MCPORTER_CONFIG")"
+  register_mcp "octave" "$OCTAVE_VENV/bin/octave-mcp-server"
+  success "OCTAVE installed: $OCTAVE_VENV/bin/octave-mcp-server"
+}
 
-    mcporter config add octave \
-      --command "$OCTAVE_VENV/bin/octave-mcp-server" \
-      --transport stdio \
-      --config "$MCPORTER_CONFIG" 2>/dev/null \
-    && success "OCTAVE MCP server registered with mcporter" \
-    || warn "Could not register with mcporter — add manually later"
-  else
-    warn "mcporter not found — register OCTAVE manually after install"
-    info "  mcporter config add octave --command $OCTAVE_VENV/bin/octave-mcp-server --transport stdio"
+# ============================================================
+# Install Graphthulhu — Knowledge Graph MCP
+# ============================================================
+
+install_graphthulhu() {
+  echo ""
+  echo -e "${BOLD}--- Graphthulhu — Knowledge Graph (Optional) ---${NC}"
+  echo ""
+  info "Typed knowledge graph for structured agent memory."
+  info "Entities (Person, Project, Task, Event), relationships, constraints."
+  info "Shared knowledge base across all agents."
+  echo ""
+  ask "Install Graphthulhu? [Y/n]"
+  read -r INSTALL_GRAPHTHULHU
+  INSTALL_GRAPHTHULHU="${INSTALL_GRAPHTHULHU:-Y}"
+
+  if [[ ! "$INSTALL_GRAPHTHULHU" =~ ^[Yy] ]]; then
+    info "Skipping Graphthulhu."
+    return
   fi
 
-  success "OCTAVE installed: $OCTAVE_VENV/bin/octave-mcp-server"
+  local VAULT_DIR="$OPENCLAW_DIR/vault"
+  mkdir -p "$VAULT_DIR"
+
+  # Try cargo install first, then check for pre-built binary
+  if command -v cargo &>/dev/null; then
+    info "Installing Graphthulhu via cargo..."
+    cargo install graphthulhu 2>&1 | tail -3 \
+      && success "Graphthulhu installed via cargo" \
+      || warn "Cargo install failed — trying binary download"
+  fi
+
+  if ! command -v graphthulhu &>/dev/null; then
+    # Try downloading pre-built binary from GitHub releases
+    local ARCH
+    ARCH=$(uname -m)
+    local OS
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+    info "Downloading Graphthulhu binary..."
+    local RELEASE_URL="https://github.com/scottozolmedia/graphthulhu/releases/latest/download/graphthulhu-${OS}-${ARCH}"
+    local BIN_DIR="$HOME/.local/bin"
+    mkdir -p "$BIN_DIR"
+
+    if curl -fsSL -o "$BIN_DIR/graphthulhu" "$RELEASE_URL" 2>/dev/null; then
+      chmod +x "$BIN_DIR/graphthulhu"
+      success "Graphthulhu binary downloaded to $BIN_DIR/graphthulhu"
+    else
+      warn "Could not download Graphthulhu. Install manually:"
+      warn "  cargo install graphthulhu"
+      warn "  OR download from: https://github.com/scottozolmedia/graphthulhu/releases"
+      return
+    fi
+  fi
+
+  register_mcp "graphthulhu" "graphthulhu serve --backend obsidian --vault $VAULT_DIR"
+  success "Graphthulhu configured with vault: $VAULT_DIR"
+}
+
+# ============================================================
+# Install ApiTap — API Traffic Interception MCP
+# ============================================================
+
+install_apitap() {
+  echo ""
+  echo -e "${BOLD}--- ApiTap — API Discovery (Optional) ---${NC}"
+  echo ""
+  info "Intercepts web API traffic during browsing."
+  info "Generates portable skill files so agents can call APIs"
+  info "directly instead of scraping — headless API discovery."
+  echo ""
+  ask "Install ApiTap? [Y/n]"
+  read -r INSTALL_APITAP
+  INSTALL_APITAP="${INSTALL_APITAP:-Y}"
+
+  if [[ ! "$INSTALL_APITAP" =~ ^[Yy] ]]; then
+    info "Skipping ApiTap."
+    return
+  fi
+
+  if npm install -g @apitap/core 2>&1 | tail -3; then
+    register_mcp "apitap" "apitap-mcp"
+    success "ApiTap installed (npm global: @apitap/core)"
+  else
+    warn "Could not install ApiTap. Install manually: npm install -g @apitap/core"
+  fi
+}
+
+# ============================================================
+# Install Scrapling — Anti-Bot Web Scraping
+# ============================================================
+
+install_scrapling() {
+  echo ""
+  echo -e "${BOLD}--- Scrapling — Web Scraping (Optional) ---${NC}"
+  echo ""
+  info "High-performance Python web scraping with anti-bot bypass."
+  info "Adaptive selectors that survive site redesigns."
+  info "Structured data extraction from JS-rendered pages."
+  echo ""
+  ask "Install Scrapling? [Y/n]"
+  read -r INSTALL_SCRAPLING
+  INSTALL_SCRAPLING="${INSTALL_SCRAPLING:-Y}"
+
+  if [[ ! "$INSTALL_SCRAPLING" =~ ^[Yy] ]]; then
+    info "Skipping Scrapling."
+    return
+  fi
+
+  local PIP_CMD
+  PIP_CMD="$(command -v pip3 || command -v pip)"
+  if [ -n "$PIP_CMD" ]; then
+    "$PIP_CMD" install --break-system-packages scrapling 2>/dev/null \
+      || "$PIP_CMD" install --user scrapling 2>/dev/null \
+      || { warn "Could not install Scrapling. Install manually: pip install scrapling"; return; }
+    success "Scrapling installed (Python package)"
+  else
+    warn "pip not found. Install manually: pip install scrapling"
+  fi
+}
+
+# ============================================================
+# Install GitHub skill
+# ============================================================
+
+install_github_skill() {
+  echo ""
+  echo -e "${BOLD}--- GitHub Integration (Optional) ---${NC}"
+  echo ""
+  info "Manage issues, PRs, CI runs, and code search via gh CLI."
+  info "Essential for any development workflow."
+  echo ""
+  ask "Install GitHub skill? [Y/n]"
+  read -r INSTALL_GITHUB
+  INSTALL_GITHUB="${INSTALL_GITHUB:-Y}"
+
+  if [[ ! "$INSTALL_GITHUB" =~ ^[Yy] ]]; then
+    info "Skipping GitHub skill."
+    return
+  fi
+
+  # Install gh CLI if not present
+  if ! command -v gh &>/dev/null; then
+    info "Installing GitHub CLI (gh)..."
+    if command -v apt-get &>/dev/null; then
+      (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && apt-get update -qq && apt-get install gh -y -qq) 2>/dev/null \
+      || warn "Could not install gh CLI automatically. Install manually: https://cli.github.com"
+    else
+      warn "Install gh CLI manually: https://cli.github.com"
+    fi
+  fi
+
+  # Install the OpenClaw GitHub skill
+  npx clawhub@latest install github 2>/dev/null \
+    && success "GitHub skill installed" \
+    || { info "clawhub install failed — copying from bundled skills"; }
+
+  command -v gh &>/dev/null && success "gh CLI available" || warn "gh CLI not found — install from https://cli.github.com"
+}
+
+# ============================================================
+# Install Playwright MCP — Browser Automation
+# ============================================================
+
+install_playwright() {
+  echo ""
+  echo -e "${BOLD}--- Playwright — Browser Automation (Optional) ---${NC}"
+  echo ""
+  info "Navigate websites, click elements, fill forms, take screenshots."
+  info "Full browser automation for complex web workflows."
+  echo ""
+  ask "Install Playwright MCP? [Y/n]"
+  read -r INSTALL_PLAYWRIGHT
+  INSTALL_PLAYWRIGHT="${INSTALL_PLAYWRIGHT:-Y}"
+
+  if [[ ! "$INSTALL_PLAYWRIGHT" =~ ^[Yy] ]]; then
+    info "Skipping Playwright."
+    return
+  fi
+
+  if npx clawhub@latest install playwright-mcp 2>/dev/null; then
+    success "Playwright MCP skill installed"
+  else
+    warn "clawhub install failed. Install manually: npx clawhub@latest install playwright-mcp"
+  fi
+}
+
+# ============================================================
+# Helper: Register MCP server in mcporter config
+# ============================================================
+
+register_mcp() {
+  local name="$1"
+  local command="$2"
+  local MCPORTER_CONFIG="$OPENCLAW_DIR/workspace/config/mcporter.json"
+  mkdir -p "$(dirname "$MCPORTER_CONFIG")"
+
+  # Create config if it doesn't exist
+  if [ ! -f "$MCPORTER_CONFIG" ]; then
+    echo '{"mcpServers":{},"imports":[]}' > "$MCPORTER_CONFIG"
+  fi
+
+  # Add the MCP server entry
+  python3 -c "
+import json, sys
+with open('$MCPORTER_CONFIG') as f:
+    config = json.load(f)
+config.setdefault('mcpServers', {})['$name'] = {'command': '$command'}
+with open('$MCPORTER_CONFIG', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null && success "$name registered in mcporter config" \
+  || warn "Could not register $name in mcporter — add manually"
+
+  # Also register for specialist agent workspaces
+  for ws in "$OPENCLAW_DIR"/workspace-*/config; do
+    if [ -d "$(dirname "$ws")" ]; then
+      mkdir -p "$ws"
+      local AGENT_MCP="$ws/mcporter.json"
+      if [ ! -f "$AGENT_MCP" ]; then
+        echo '{"mcpServers":{},"imports":[]}' > "$AGENT_MCP"
+      fi
+      python3 -c "
+import json
+with open('$AGENT_MCP') as f:
+    config = json.load(f)
+config.setdefault('mcpServers', {})['$name'] = {'command': '$command'}
+with open('$AGENT_MCP', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null
+    fi
+  done
 }
 
 # ============================================================
@@ -1021,7 +1239,22 @@ main() {
   generate_env
   generate_config
   deploy_workspaces
+
+  # ---- Optional Tools & Skills ----
+  echo ""
+  echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║${NC}  ${BOLD}Optional Tools & Integrations${NC}               ${GREEN}║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+  echo ""
+  info "The following are all optional. Press Enter to accept defaults."
+  echo ""
+
   install_octave
+  install_graphthulhu
+  install_apitap
+  install_scrapling
+  install_github_skill
+  install_playwright
 
   # Install NanoFlow Console (if selected)
   if [ "$USE_CONSOLE" = true ]; then

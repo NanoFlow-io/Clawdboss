@@ -11,9 +11,17 @@ One script to go from zero to a fully secured, multi-agent AI assistant on Disco
 - **WAL Protocol** — Write-Ahead Log for corrections, decisions, and details that survive context loss
 - **Working Buffer** — Danger zone logging to survive context compaction without losing work
 - **Discord integration** — Bot bound to your server with channel-per-agent routing
+- **Web dashboard** — NanoFlow Console with chat, file browser, terminal, cost analytics (optional)
 - **Env-based secrets** — All API keys in `.env`, never in config files
-- **Automated security audits** — Sentinel agent runs scheduled hardening checks
-- **OCTAVE protocol** — Structured AI communication with 3-20x token compression (optional)
+- **Automated security audits** — Security agent runs scheduled hardening checks
+- **Knowledge graph** — Graphthulhu for structured memory across agents (optional)
+- **API discovery** — ApiTap intercepts web traffic to teach agents how APIs work (optional)
+- **Web scraping** — Scrapling for anti-bot-bypassing data extraction (optional)
+- **Browser automation** — Playwright MCP for full GUI workflows (optional)
+- **GitHub integration** — Issues, PRs, CI/CD via `gh` CLI (optional)
+- **Token compression** — OCTAVE protocol for 3-20x compression in multi-agent handoffs (optional)
+- **Observability** — Clawmetry dashboard for token costs, sessions, live message flow (optional)
+- **Security suite** — ClawSec for file integrity, advisory feed, malicious skill detection (optional)
 
 ## Quick Start
 
@@ -34,7 +42,7 @@ The setup wizard will:
 2. Create your `.env` file (gitignored, never committed)
 3. Generate `openclaw.json` with `${VAR}` references to your `.env`
 4. Create agent workspaces with security rules + WAL Protocol pre-baked
-5. Optionally install OCTAVE MCP server for structured document compression
+5. Offer optional tools: Graphthulhu, ApiTap, Scrapling, GitHub, Playwright, OCTAVE, Clawmetry, ClawSec
 6. Start the gateway
 
 ## Configuration Tiers
@@ -109,12 +117,20 @@ See [docs/security.md](docs/security.md) for the full security architecture.
 
 ## Recommended Ecosystem Tools
 
-Clawdboss has been tested with these vetted community tools:
+The setup wizard offers each of these individually. All are free and open-source:
 
-- **[Clawmetry](https://clawmetry.com)** — Real-time observability dashboard. Token costs, sessions, crons, live message flow. `pip install clawmetry && clawmetry` (free, MIT)
-- **[ClawSec](https://github.com/prompt-security/clawsec)** — Security suite from Prompt Security. File integrity protection (Soul Guardian), advisory feed monitoring, malicious skill detection. (free, MIT)
+| Tool | Purpose | Install Method |
+|------|---------|---------------|
+| **[Graphthulhu](https://github.com/scottozolmedia/graphthulhu)** | Knowledge graph memory (entities, relationships, constraints) | Binary / cargo |
+| **[ApiTap](https://www.npmjs.com/package/@apitap/core)** | API discovery — intercepts web traffic, generates skill files | `npm install -g @apitap/core` |
+| **[Scrapling](https://github.com/D4Vinci/Scrapling)** | Anti-bot web scraping with adaptive selectors | `pip install scrapling` |
+| **[Playwright MCP](https://clawhub.com/playwright-mcp)** | Full browser automation (navigate, click, fill, screenshot) | `clawhub install` |
+| **[GitHub](https://cli.github.com)** | Issues, PRs, CI/CD via `gh` CLI | `clawhub install` + `gh` CLI |
+| **[OCTAVE](https://pypi.org/project/octave-mcp/)** | 3-20x token compression for multi-agent handoffs | `pip install octave-mcp` |
+| **[Clawmetry](https://clawmetry.com)** | Real-time observability dashboard (costs, sessions, flow) | `pip install clawmetry` |
+| **[ClawSec](https://github.com/prompt-security/clawsec)** | File integrity, advisory feed, malicious skill detection | Git clone |
 
-See [docs/recommended-tools.md](docs/recommended-tools.md) for install guides.
+See [docs/recommended-tools.md](docs/recommended-tools.md) for detailed install guides.
 
 ## Requirements
 
