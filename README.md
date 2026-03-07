@@ -48,7 +48,8 @@ The setup wizard will:
 3. Generate `openclaw.json` with `${VAR}` references to your `.env`
 4. Create agent workspaces with security rules + WAL Protocol pre-baked
 5. Offer optional tools: Graphthulhu, ApiTap, Scrapling, GitHub, Playwright, OCTAVE, Humanizer, Self-Improving Agent, Find Skills, Marketing Skills, Healthcheck, Clawmetry, ClawSec
-6. Start the gateway
+6. Run OpenClaw's built-in skills wizard (Whisper, Nano Banana Pro, mcporter, TTS, email, etc.)
+7. Start the gateway
 
 ## Configuration Tiers
 

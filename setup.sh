@@ -1510,6 +1510,37 @@ CONSOLEEOF
     fi
   fi
 
+  # ---- Built-in Skills Activation ----
+  echo ""
+  echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║${NC}  ${BOLD}Built-in Skills Activation${NC}                  ${GREEN}║${NC}"
+  echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+  echo ""
+  info "OpenClaw ships with 50+ built-in skills (Whisper transcription,"
+  info "Nano Banana Pro image gen, mcporter MCP management, TTS, email, etc.)"
+  info "Many need API keys or CLI tools to activate."
+  echo ""
+  info "The OpenClaw skills wizard will show which are ready and which"
+  info "need dependencies — you can install them and set API keys interactively."
+  echo ""
+  ask "Run OpenClaw skills setup now? (recommended) [Y/n]"
+  read -r RUN_SKILLS_SETUP
+  RUN_SKILLS_SETUP="${RUN_SKILLS_SETUP:-Y}"
+
+  if [[ "$RUN_SKILLS_SETUP" =~ ^[Yy] ]]; then
+    echo ""
+    info "Launching OpenClaw skills wizard..."
+    echo ""
+    openclaw configure --section skills 2>&1 || {
+      warn "Skills wizard exited with an error."
+      info "You can run it again later: openclaw configure --section skills"
+    }
+    echo ""
+    success "Skills setup complete."
+  else
+    info "Skipped. Run later with: openclaw configure --section skills"
+  fi
+
   show_summary
 }
 
