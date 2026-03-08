@@ -1729,6 +1729,8 @@ show_summary() {
   echo -e "${GREEN}║${NC}  ${BOLD}✅ Clawdboss Setup Complete!${NC}                ${GREEN}║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
   echo ""
+
+  # ---- Agent Overview ----
   echo -e "  ${BOLD}Agent:${NC}     $AGENT_NAME $AGENT_EMOJI"
   echo -e "  ${BOLD}Tier:${NC}      $([ "$TIER_CHOICE" = "1" ] && echo "Solo" || ([ "$TIER_CHOICE" = "2" ] && echo "Team" || echo "Squad"))"
   echo -e "  ${BOLD}Provider:${NC}  $LLM_PROVIDER"
@@ -1737,22 +1739,123 @@ show_summary() {
   echo -e "  ${BOLD}Workspace:${NC} $OPENCLAW_DIR/workspace"
   echo ""
 
-  if [ "$DEPLOY_COMMS" = true ]; then
-    echo -e "  ${BOLD}Comms:${NC}     $COMMS_NAME 📡"
-  fi
-  if [ "$DEPLOY_RESEARCH" = true ]; then
-    echo -e "  ${BOLD}Research:${NC}  $RESEARCH_NAME 🔍"
-  fi
-  if [ "$DEPLOY_SECURITY" = true ]; then
-    echo -e "  ${BOLD}Security:${NC} $SECURITY_NAME 🛡️"
+  # ---- Agents ----
+  if [ "$DEPLOY_COMMS" = true ] || [ "$DEPLOY_RESEARCH" = true ] || [ "$DEPLOY_SECURITY" = true ]; then
+    echo -e "  ${BOLD}Agents:${NC}"
+    echo "    • $AGENT_NAME $AGENT_EMOJI (main agent)"
+    if [ "$DEPLOY_COMMS" = true ]; then
+      echo "    • $COMMS_NAME 📡 (communications)"
+    fi
+    if [ "$DEPLOY_RESEARCH" = true ]; then
+      echo "    • $RESEARCH_NAME 🔍 (search & discovery)"
+    fi
+    if [ "$DEPLOY_SECURITY" = true ]; then
+      echo "    • $SECURITY_NAME 🛡️ (security)"
+    fi
+    echo ""
   fi
 
+  # ---- Interface ----
+  echo -e "  ${BOLD}Interface:${NC}"
+  if [ "$USE_DISCORD" = true ]; then
+    echo "    • Discord bot — connected to your server"
+  fi
+  if [ "$USE_CONSOLE" = true ]; then
+    echo "    • ClawSuite Console — web dashboard at ~/clawsuite"
+    if [ "${CONSOLE_SECURITY:-1}" = "2" ] && [ -n "${CONSOLE_DOMAIN:-}" ]; then
+      echo "      URL: https://$CONSOLE_DOMAIN"
+      echo "      Auth: $CONSOLE_AUTH_USER / [your password]"
+      echo "      SSL: Caddy reverse proxy with auto-HTTPS"
+    elif [ "${CONSOLE_SECURITY:-1}" = "3" ]; then
+      echo "      URL: http://YOUR-SERVER-IP:3000 (no SSL)"
+    else
+      echo "      Access: SSH tunnel → http://localhost:3000"
+    fi
+  fi
+  echo "    • OpenClaw TUI — terminal interface: openclaw tui"
   echo ""
-  echo -e "  ${BOLD}Next steps:${NC}"
+
+  # ---- Ecosystem Tools ----
+  echo -e "  ${BOLD}Ecosystem Tools:${NC}"
+  if [[ "${INSTALL_CLAWMETRY:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Clawmetry — observability dashboard (localhost:8900)"
+  fi
+  if [[ "${INSTALL_CLAWSEC:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ ClawSec — Soul Guardian + advisory feed"
+  fi
+  if [[ "${INSTALL_OCTAVE:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Octave — structured agent memory"
+  fi
+  if [[ "${INSTALL_GRAPHTHULHU:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Graphthulhu — knowledge graph (Obsidian vault: $OPENCLAW_DIR/vault)"
+  fi
+  if [[ "${INSTALL_APITAP:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ ApiTap — API traffic interception"
+  fi
+  if [[ "${INSTALL_SCRAPLING:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Scrapling — web scraping (anti-bot bypass)"
+  fi
+  if [[ "${INSTALL_PLAYWRIGHT:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Playwright — browser automation"
+  fi
+  echo ""
+
+  # ---- Skills ----
+  echo -e "  ${BOLD}Skills Installed:${NC}"
+  if [[ "${INSTALL_GITHUB:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ GitHub — issues, PRs, CI via gh CLI"
+  fi
+  if [[ "${INSTALL_HUMANIZER:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Humanizer — content humanization"
+  fi
+  if [[ "${INSTALL_SELFIMPROVE:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Self-Improving Agent — continuous learning"
+  fi
+  if [[ "${INSTALL_FINDSKILLS:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Find Skills — skill discovery helper"
+  fi
+  if [[ "${INSTALL_MARKETING:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Marketing Skills — CRO, SEO, copywriting, ads"
+  fi
+  if [[ "${INSTALL_HEALTHCHECK:-N}" =~ ^[Yy] ]]; then
+    echo "    ✅ Healthcheck — host security auditing"
+  fi
+  echo "    ✅ Built-in skill dependencies pre-installed (see above)"
+  echo ""
+
+  # ---- Security ----
+  echo -e "  ${BOLD}Security:${NC}"
+  echo "    • API keys stored in $ENV_FILE (600 permissions)"
+  echo "    • Config uses \${VAR} references — no plaintext keys"
+  echo "    • All agents have prompt injection defense pre-configured"
+  echo "    • Anti-loop rules prevent token-burning attacks"
+  echo "    • External content treated as untrusted data"
+  if [[ "${INSTALL_CLAWSEC:-N}" =~ ^[Yy] ]]; then
+    echo "    • Soul Guardian — file integrity monitoring"
+    echo "    • ClawSec advisory feed — vulnerability alerts"
+  fi
+  # Show hardening results if run
+  if command -v ufw &>/dev/null; then
+    local UFW_NOW
+    UFW_NOW=$(ufw status 2>/dev/null | head -1)
+    if [[ "$UFW_NOW" == *"active"* ]]; then
+      echo "    • UFW firewall — enabled (SSH allowed)"
+    fi
+  fi
+  local SSHD_ROOT
+  SSHD_ROOT=$(grep -E "^\s*PermitRootLogin\s+" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tail -1)
+  if [ "$SSHD_ROOT" = "prohibit-password" ] || [ "$SSHD_ROOT" = "no" ]; then
+    echo "    • SSH root login — hardened ($SSHD_ROOT)"
+  fi
+  echo ""
+
+  # ---- Next Steps (LAST) ----
+  echo -e "  ${BOLD}Next Steps:${NC}"
   echo ""
 
   local STEP=1
 
+  # Provider auth step (if needed)
   if [ "$LLM_PROVIDER" = "copilot" ]; then
     echo "    $STEP. Start the GitHub Copilot proxy (must run before OpenClaw):"
     echo ""
@@ -1762,97 +1865,92 @@ show_summary() {
     echo "       Open the URL in your browser, enter the code, and authorize"
     echo "       with a GitHub account that has a Copilot subscription."
     echo ""
-    echo "       To run it in the background:"
+    echo "       To run in the background:"
     echo "       tmux new-session -d -s copilot 'npx copilot-api start --port 4141'"
     echo ""
     STEP=$((STEP + 1))
-  elif [ "$LLM_PROVIDER" = "openai-codex-oauth" ]; then
-    if [ -z "${OAUTH_DEFERRED:-}" ]; then
-      echo "    $STEP. Authenticate with OpenAI Codex (if not done during setup):"
-      echo "       openclaw models auth login --provider openai-codex --set-default"
-      echo ""
-      STEP=$((STEP + 1))
-    fi
-  elif [ "$LLM_PROVIDER" = "gemini-cli-oauth" ]; then
-    if [ -z "${OAUTH_DEFERRED:-}" ]; then
-      echo "    $STEP. Authenticate with Gemini CLI (if not done during setup):"
-      echo "       openclaw plugins enable google-gemini-cli-auth"
-      echo "       openclaw models auth login --provider google-gemini-cli --set-default"
-      echo ""
-      STEP=$((STEP + 1))
-    fi
-  elif [ "$LLM_PROVIDER" = "anthropic-oauth" ]; then
-    if [ -z "${OAUTH_DEFERRED:-}" ]; then
-      echo "    $STEP. Authenticate with Anthropic (if not done during setup):"
-      echo "       openclaw models auth paste-token --provider anthropic"
-      echo ""
-      STEP=$((STEP + 1))
-    fi
+  elif [ "$LLM_PROVIDER" = "openai-codex-oauth" ] && [ -z "${OAUTH_DEFERRED:-}" ]; then
+    echo "    $STEP. Authenticate with OpenAI Codex (if not done during setup):"
+    echo "       openclaw models auth login --provider openai-codex --set-default"
+    echo ""
+    STEP=$((STEP + 1))
+  elif [ "$LLM_PROVIDER" = "gemini-cli-oauth" ] && [ -z "${OAUTH_DEFERRED:-}" ]; then
+    echo "    $STEP. Authenticate with Gemini CLI (if not done during setup):"
+    echo "       openclaw plugins enable google-gemini-cli-auth"
+    echo "       openclaw models auth login --provider google-gemini-cli --set-default"
+    echo ""
+    STEP=$((STEP + 1))
+  elif [ "$LLM_PROVIDER" = "anthropic-oauth" ] && [ -z "${OAUTH_DEFERRED:-}" ]; then
+    echo "    $STEP. Authenticate with Anthropic (if not done during setup):"
+    echo "       openclaw models auth paste-token --provider anthropic"
+    echo ""
+    STEP=$((STEP + 1))
   fi
 
+  # Start OpenClaw
   echo "    $STEP. Start OpenClaw:"
+  echo ""
   echo "       openclaw gateway start"
+  echo ""
+  echo "       Or run in the background with tmux:"
+  echo "       tmux new-session -d -s openclaw 'openclaw gateway run'"
+  echo ""
   STEP=$((STEP + 1))
 
+  # Check status
   echo "    $STEP. Check status:"
   echo "       openclaw status"
+  echo ""
   STEP=$((STEP + 1))
 
+  # Start ClawSuite Console
   if [ "$USE_CONSOLE" = true ]; then
-    echo ""
     echo "    $STEP. Start ClawSuite Console (web dashboard):"
+    echo ""
     if [ "${CONSOLE_SECURITY:-1}" = "2" ] && [ -n "${CONSOLE_DOMAIN:-}" ]; then
       echo "       cd ~/clawsuite && HOST=127.0.0.1 PORT=3000 node server-entry.js"
       echo ""
-      echo "       Caddy handles SSL: https://$CONSOLE_DOMAIN"
-      echo "       Auth: $CONSOLE_AUTH_USER / [your password]"
+      echo "       Or in the background:"
+      echo "       tmux new-session -d -s console 'cd ~/clawsuite && HOST=127.0.0.1 PORT=3000 node server-entry.js'"
+      echo ""
+      echo "       Access: https://$CONSOLE_DOMAIN"
+      echo "       Auth:   $CONSOLE_AUTH_USER / [your password]"
+      echo "       SSL:    Managed by Caddy (auto-renewed)"
     elif [ "${CONSOLE_SECURITY:-1}" = "3" ]; then
       echo "       cd ~/clawsuite && HOST=0.0.0.0 PORT=3000 node server-entry.js"
       echo ""
-      echo "       Then open in your browser:"
-      echo "         • Local:  http://localhost:3000"
-      echo "         • Remote: http://YOUR-SERVER-IP:3000"
+      echo "       Or in the background:"
+      echo "       tmux new-session -d -s console 'cd ~/clawsuite && HOST=0.0.0.0 PORT=3000 node server-entry.js'"
+      echo ""
+      echo "       Access: http://YOUR-SERVER-IP:3000"
     else
       echo "       cd ~/clawsuite && HOST=127.0.0.1 PORT=3000 node server-entry.js"
+      echo ""
+      echo "       Or in the background:"
+      echo "       tmux new-session -d -s console 'cd ~/clawsuite && HOST=127.0.0.1 PORT=3000 node server-entry.js'"
       echo ""
       echo "       Access via SSH tunnel:"
       echo "         ssh -L 3000:localhost:3000 user@your-server-ip"
       echo "         Then open: http://localhost:3000"
     fi
     echo ""
-    echo "       To run it in the background:"
-    echo "       tmux new-session -d -s console 'cd ~/clawsuite && HOST=${CONSOLE_HOST:-127.0.0.1} PORT=3000 node server-entry.js'"
     STEP=$((STEP + 1))
   fi
 
-  if [ "$USE_DISCORD" = true ]; then
-    echo ""
-    echo "    $STEP. Open Discord and chat with your agent in the channel you configured"
-    STEP=$((STEP + 1))
-  fi
+  # Use your agent
+  echo "    $STEP. Start chatting with your agent:"
   echo ""
-  echo -e "  ${BOLD}Interface:${NC}"
   if [ "$USE_DISCORD" = true ]; then
-    echo "    • Discord bot configured"
+    echo "       • Discord: Open your server and chat in the agent channel"
   fi
   if [ "$USE_CONSOLE" = true ]; then
-    echo "    • ClawSuite Console installed at ~/clawsuite"
+    if [ "${CONSOLE_SECURITY:-1}" = "2" ] && [ -n "${CONSOLE_DOMAIN:-}" ]; then
+      echo "       • Web: https://$CONSOLE_DOMAIN"
+    else
+      echo "       • Web: ClawSuite Console (see step above)"
+    fi
   fi
-  echo ""
-  echo -e "  ${BOLD}Ecosystem Tools:${NC}"
-  if [[ "${INSTALL_CLAWMETRY:-N}" =~ ^[Yy] ]]; then
-    echo "    • Clawmetry installed — run: clawmetry (opens localhost:8900)"
-  fi
-  if [[ "${INSTALL_CLAWSEC:-N}" =~ ^[Yy] ]]; then
-    echo "    • ClawSec suite installed — Soul Guardian + advisory feed"
-  fi
-  echo ""
-  echo -e "  ${BOLD}Security:${NC}"
-  echo "    • API keys stored in $ENV_FILE (600 permissions)"
-  echo "    • Config uses \${VAR} references — no plaintext keys"
-  echo "    • All agents have prompt injection defense pre-configured"
-  echo "    • Anti-loop rules prevent token-burning attacks"
-  echo "    • Server hardening applied (firewall, SSH, port protection)"
+  echo "       • Terminal: openclaw tui"
   echo ""
 }
 
