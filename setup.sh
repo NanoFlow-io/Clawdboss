@@ -592,7 +592,15 @@ collect_keys() {
     DISCORD_GUILD=""
     DISCORD_OWNER=""
     DISCORD_MAIN_CHANNEL=""
+    DISCORD_COMMS_CHANNEL=""
+    DISCORD_RESEARCH_CHANNEL=""
+    DISCORD_SECURITY_CHANNEL=""
   fi
+
+  # Default specialist names if not set (Solo tier)
+  COMMS_NAME="${COMMS_NAME:-Knox}"
+  RESEARCH_NAME="${RESEARCH_NAME:-Trace}"
+  SECURITY_NAME="${SECURITY_NAME:-Sentinel}"
 
   echo ""
 
