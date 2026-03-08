@@ -1290,12 +1290,31 @@ install_scrapling() {
   local PIP_CMD
   PIP_CMD="$(command -v pip3 || command -v pip)"
   if [ -n "$PIP_CMD" ]; then
-    "$PIP_CMD" install --break-system-packages scrapling 2>/dev/null \
-      || "$PIP_CMD" install --user scrapling 2>/dev/null \
-      || { warn "Could not install Scrapling. Install manually: pip install scrapling"; return; }
-    success "Scrapling installed (Python package)"
+    info "Installing Scrapling and dependencies..."
+    "$PIP_CMD" install --break-system-packages scrapling curl_cffi browserforge 2>/dev/null \
+      || "$PIP_CMD" install --user scrapling curl_cffi browserforge 2>/dev/null \
+      || { warn "Could not install Scrapling. Install manually: pip install scrapling curl_cffi browserforge"; return; }
+
+    # Install Playwright browsers for Scrapling's StealthyFetcher/PlayWrightFetcher
+    info "Installing Playwright and Chromium browser..."
+    "$PIP_CMD" install --break-system-packages playwright 2>/dev/null \
+      || "$PIP_CMD" install --user playwright 2>/dev/null \
+      || warn "Could not install playwright Python package"
+
+    # Install Chromium browser binary
+    python3 -m playwright install chromium 2>/dev/null \
+      && success "Chromium browser installed for Scrapling" \
+      || warn "Could not install Chromium. Run manually: python3 -m playwright install chromium"
+
+    # Install system dependencies for Chromium (headless)
+    if command -v apt-get &>/dev/null; then
+      python3 -m playwright install-deps chromium 2>/dev/null \
+        || warn "Could not install Chromium system deps. Run: python3 -m playwright install-deps chromium"
+    fi
+
+    success "Scrapling installed with all dependencies"
   else
-    warn "pip not found. Install manually: pip install scrapling"
+    warn "pip not found. Install manually: pip install scrapling curl_cffi browserforge playwright"
   fi
 }
 
