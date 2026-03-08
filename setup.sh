@@ -2071,15 +2071,86 @@ CONSOLEEOF
           # Install Caddy
           if ! command -v caddy &>/dev/null; then
             info "Installing Caddy web server..."
+            local CADDY_INSTALLED=false
+
             if command -v apt-get &>/dev/null; then
-              apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl 2>/dev/null
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
-              apt-get update -qq && apt-get install caddy -y -qq \
-                && success "Caddy installed" \
-                || warn "Could not install Caddy. Install manually: https://caddyserver.com/docs/install"
-            else
-              warn "Install Caddy manually: https://caddyserver.com/docs/install"
+              # Method 1: Official apt repo
+              apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gnupg 2>/dev/null
+
+              # Remove stale/expired keyring before re-downloading
+              rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+
+              if curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+                  | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null \
+                && chmod a+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+                && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+                  | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null \
+                && apt-get update -qq 2>/dev/null \
+                && apt-get install caddy -y -qq 2>/dev/null; then
+                success "Caddy installed via apt"
+                CADDY_INSTALLED=true
+              else
+                warn "Caddy apt repo failed. Trying static binary fallback..."
+                # Clean up failed apt repo to avoid future update errors
+                rm -f /etc/apt/sources.list.d/caddy-stable.list 2>/dev/null
+              fi
+            fi
+
+            # Method 2: Static binary from GitHub releases
+            if [ "$CADDY_INSTALLED" = false ]; then
+              local CADDY_ARCH="amd64"
+              [ "$(uname -m)" = "aarch64" ] && CADDY_ARCH="arm64"
+              local CADDY_TAG
+              CADDY_TAG=$(curl -sS "https://api.github.com/repos/caddyserver/caddy/releases/latest" 2>/dev/null \
+                | grep -oP '"tag_name":\s*"\K[^"]+')
+
+              if [ -n "$CADDY_TAG" ]; then
+                local CADDY_VER="${CADDY_TAG#v}"
+                local CADDY_URL="https://github.com/caddyserver/caddy/releases/download/${CADDY_TAG}/caddy_${CADDY_VER}_linux_${CADDY_ARCH}.tar.gz"
+                if curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL" 2>/dev/null; then
+                  tar xzf /tmp/caddy.tar.gz -C /tmp caddy 2>/dev/null
+                  if [ -f /tmp/caddy ]; then
+                    mv /tmp/caddy /usr/local/bin/caddy && chmod +x /usr/local/bin/caddy
+                    rm -f /tmp/caddy.tar.gz
+
+                    # Create Caddy config dir if it doesn't exist
+                    mkdir -p /etc/caddy
+
+                    # Set up Caddy as a systemd service
+                    if [ -d /etc/systemd/system ] && [ ! -f /etc/systemd/system/caddy.service ]; then
+                      cat > /etc/systemd/system/caddy.service << 'CADDYSVC'
+[Unit]
+Description=Caddy
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --resume
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+LimitNPROC=512
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+CADDYSVC
+                      systemctl daemon-reload 2>/dev/null
+                    fi
+
+                    success "Caddy ${CADDY_VER} installed from GitHub release"
+                    CADDY_INSTALLED=true
+                  fi
+                fi
+                rm -f /tmp/caddy.tar.gz 2>/dev/null
+              fi
+            fi
+
+            if [ "$CADDY_INSTALLED" = false ]; then
+              warn "Could not install Caddy. Install manually: https://caddyserver.com/docs/install"
             fi
           fi
 
