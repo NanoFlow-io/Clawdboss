@@ -35,22 +35,16 @@ One script to go from zero to a fully secured, multi-agent AI assistant on Disco
 SSH into your server and run:
 
 ```bash
-# 1. Install Node.js 22
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 2. Install build tools (needed for some npm packages)
-sudo apt-get install -y build-essential git python3 python3-pip
-
-# 3. Clone Clawdboss
+# 1. Clone Clawdboss
+apt-get update && apt-get install -y git
 git clone https://github.com/NanoFlow-io/clawdboss.git
 cd clawdboss
 
-# 4. Run the setup wizard
+# 2. Run the setup wizard (auto-installs Node.js 22, Python, build tools, OpenClaw)
 ./setup.sh
 ```
 
-That's it. The wizard handles everything else — OpenClaw installation, API keys, agent creation, optional tools.
+That's it. The wizard auto-installs all dependencies (Node.js 22, Python, git, build-essential, OpenClaw) and walks you through everything else.
 
 ### What You'll Need Ready
 

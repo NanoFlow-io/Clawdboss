@@ -127,18 +127,55 @@ safe_write_check() {
 preflight() {
   info "Running pre-flight checks..."
 
+  # Auto-install Node.js 22 if not found or version too old
+  local need_node=false
   if ! command -v node &>/dev/null; then
-    error "Node.js not found. Install it first:"
-    echo "  curl -fsSL https://openclaw.ai/install.sh | bash"
-    exit 1
+    need_node=true
+  else
+    NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+    if [ "$NODE_VERSION" -lt 22 ]; then
+      warn "Node.js 22+ required (found v$(node -v))"
+      need_node=true
+    fi
   fi
 
-  NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-  if [ "$NODE_VERSION" -lt 22 ]; then
-    error "Node.js 22+ required (found v$(node -v))"
-    exit 1
+  if [ "$need_node" = true ]; then
+    info "Installing Node.js 22..."
+    if command -v curl &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null \
+        && apt-get install -y nodejs 2>/dev/null \
+        && success "Node.js $(node -v) installed" \
+        || {
+          error "Could not auto-install Node.js. Install manually:"
+          echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
+          echo "  sudo apt-get install -y nodejs"
+          exit 1
+        }
+    else
+      error "curl not found. Install Node.js 22 manually:"
+      echo "  apt-get install -y curl"
+      echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
+      echo "  sudo apt-get install -y nodejs"
+      exit 1
+    fi
+  else
+    success "Node.js $(node -v)"
   fi
-  success "Node.js $(node -v)"
+
+  # Auto-install essential build tools
+  local missing_pkgs=""
+  command -v git &>/dev/null || missing_pkgs="$missing_pkgs git"
+  command -v python3 &>/dev/null || missing_pkgs="$missing_pkgs python3"
+  command -v make &>/dev/null || missing_pkgs="$missing_pkgs build-essential"
+  command -v pip3 &>/dev/null || missing_pkgs="$missing_pkgs python3-pip"
+
+  if [ -n "$missing_pkgs" ]; then
+    info "Installing dependencies:$missing_pkgs"
+    apt-get update -qq 2>/dev/null
+    apt-get install -y $missing_pkgs 2>/dev/null \
+      && success "Dependencies installed" \
+      || warn "Could not auto-install some packages. Install manually: sudo apt-get install -y$missing_pkgs"
+  fi
 
   if ! command -v openclaw &>/dev/null; then
     warn "OpenClaw not found. Installing..."
