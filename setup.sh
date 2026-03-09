@@ -2428,6 +2428,102 @@ CADDYEOF
   # ---- Server Hardening ----
   harden_server
 
+  # ---- Auto-start Gateway ----
+  echo ""
+  info "Starting OpenClaw gateway..."
+
+  if [ "$(id -u)" = "0" ]; then
+    # Running as root — use tmux (systemd services shouldn't run as root)
+    if command -v tmux &>/dev/null; then
+      # Kill any existing session first
+      tmux kill-session -t openclaw 2>/dev/null || true
+      tmux new-session -d -s openclaw "openclaw gateway run"
+      sleep 2
+      if tmux has-session -t openclaw 2>/dev/null; then
+        success "Gateway started in tmux session 'openclaw'"
+        info "Attach with: tmux attach -t openclaw"
+        info "Detach with: Ctrl+B then D"
+      else
+        warn "Gateway may not have started. Check: tmux attach -t openclaw"
+      fi
+    else
+      warn "tmux not found — start the gateway manually: openclaw gateway run"
+    fi
+  else
+    # Non-root — try systemd service, fall back to tmux
+    if [ -d /etc/systemd/system ] && command -v systemctl &>/dev/null; then
+      # Create systemd service if it doesn't exist
+      if [ ! -f /etc/systemd/system/openclaw.service ]; then
+        info "Setting up OpenClaw as a systemd service..."
+        local OPENCLAW_BIN
+        OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "/usr/local/bin/openclaw")"
+        local CURRENT_USER
+        CURRENT_USER="$(whoami)"
+
+        sudo tee /etc/systemd/system/openclaw.service > /dev/null << SVCEOF
+[Unit]
+Description=OpenClaw AI Agent Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=$HOME
+ExecStart=$OPENCLAW_BIN gateway run
+Restart=on-failure
+RestartSec=5
+Environment=HOME=$HOME
+Environment=PATH=$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+        sudo systemctl daemon-reload 2>/dev/null
+        sudo systemctl enable openclaw 2>/dev/null
+        success "Systemd service created and enabled"
+      fi
+
+      sudo systemctl start openclaw 2>/dev/null
+      sleep 2
+      if systemctl is-active --quiet openclaw 2>/dev/null; then
+        success "Gateway started via systemd"
+        info "Check status: systemctl status openclaw"
+        info "View logs: journalctl -u openclaw -f"
+      else
+        warn "Systemd start may have failed. Falling back to tmux..."
+        if command -v tmux &>/dev/null; then
+          tmux kill-session -t openclaw 2>/dev/null || true
+          tmux new-session -d -s openclaw "openclaw gateway run"
+          sleep 2
+          if tmux has-session -t openclaw 2>/dev/null; then
+            success "Gateway started in tmux session 'openclaw'"
+          else
+            warn "Could not start gateway. Run manually: openclaw gateway start"
+          fi
+        else
+          openclaw gateway start 2>/dev/null &
+          sleep 2
+          success "Gateway start attempted in background"
+        fi
+      fi
+    elif command -v tmux &>/dev/null; then
+      tmux kill-session -t openclaw 2>/dev/null || true
+      tmux new-session -d -s openclaw "openclaw gateway run"
+      sleep 2
+      if tmux has-session -t openclaw 2>/dev/null; then
+        success "Gateway started in tmux session 'openclaw'"
+        info "Attach with: tmux attach -t openclaw"
+      else
+        warn "Could not start gateway. Run manually: openclaw gateway start"
+      fi
+    else
+      openclaw gateway start 2>/dev/null &
+      sleep 2
+      success "Gateway start attempted in background"
+    fi
+  fi
+
   show_summary
 }
 
