@@ -2705,8 +2705,14 @@ install_skill_deps() {
   if ! command -v op &>/dev/null; then
     info "Installing 1Password CLI..."
     if command -v apt-get &>/dev/null; then
+      # Clean up any stale 1Password GPG keys/repos first
+      rm -f /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null
+      rm -f /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg 2>/dev/null
+      rm -f /etc/apt/sources.list.d/1password.list 2>/dev/null
+
       curl -sS https://downloads.1password.com/linux/keys/1password.asc 2>/dev/null \
-        | gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null \
+        | gpg --batch --yes --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null \
+        && chmod a+r /usr/share/keyrings/1password-archive-keyring.gpg \
         && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" \
           | tee /etc/apt/sources.list.d/1password.list > /dev/null \
         && mkdir -p /etc/debsig/policies/AC2D62742012EA22/ \
@@ -2714,10 +2720,13 @@ install_skill_deps() {
           | tee /etc/debsig/policies/AC2D62742012EA22/1password.pol > /dev/null \
         && mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22 \
         && curl -sS https://downloads.1password.com/linux/keys/1password.asc \
-          | gpg --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg 2>/dev/null \
-        && apt-get update -qq && apt-get install -y -qq 1password-cli \
+          | gpg --batch --yes --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg 2>/dev/null \
+        && chmod a+r /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg \
+        && apt-get update -qq 2>/dev/null && apt-get install -y -qq 1password-cli \
         && success "1Password CLI installed" && INSTALLED=$((INSTALLED + 1)) \
-        || { warn "1Password CLI install failed"; FAILED=$((FAILED + 1)); }
+        || { warn "1Password CLI install failed"; FAILED=$((FAILED + 1));
+             # Clean up failed repo so it doesn't break future apt operations
+             rm -f /etc/apt/sources.list.d/1password.list 2>/dev/null; }
     else
       warn "Skipping 1Password CLI (no apt)"
       FAILED=$((FAILED + 1))
@@ -2746,9 +2755,9 @@ install_skill_deps() {
   fi
 
   # --- gog (Gmail/Calendar/Drive CLI) ---
-  if ! command -v gog &>/dev/null; then
+  if ! command -v gog &>/dev/null && ! command -v gogcli &>/dev/null; then
     info "Installing gog (Google Workspace CLI)..."
-    gh_release_install "steipete/gogcli" "gog" \
+    gh_release_install "steipete/gogcli" "gogcli" \
       && success "gog installed" && INSTALLED=$((INSTALLED + 1)) \
       || { warn "gog install failed — try: go install github.com/steipete/gogcli@latest"; FAILED=$((FAILED + 1)); }
   else
