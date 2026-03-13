@@ -264,7 +264,7 @@ preflight() {
 
   if ! command -v openclaw &>/dev/null; then
     warn "OpenClaw not found. Installing..."
-    npm install -g openclaw@latest
+    npm install -g --ignore-scripts openclaw@latest
   fi
   success "OpenClaw $(openclaw --version 2>/dev/null | head -1)"
 
@@ -1579,7 +1579,8 @@ install_graphthulhu() {
     local BIN_DIR="$HOME/.local/bin"
     mkdir -p "$BIN_DIR"
 
-    if curl -fsSL -o /tmp/graphthulhu.tar.gz "$RELEASE_URL" 2>/dev/null; then
+    download_verified "$RELEASE_URL" "/tmp/graphthulhu.tar.gz" "SKIP"
+    if [ -f /tmp/graphthulhu.tar.gz ]; then
       (cd /tmp && tar xzf graphthulhu.tar.gz && mv graphthulhu "$BIN_DIR/" && chmod +x "$BIN_DIR/graphthulhu")
       success "Graphthulhu binary downloaded to $BIN_DIR/graphthulhu"
       rm -f /tmp/graphthulhu.tar.gz
@@ -1618,11 +1619,11 @@ install_apitap() {
     return
   fi
 
-  if npm install -g @apitap/core 2>&1 | tail -3; then
+  if npm install -g --ignore-scripts @apitap/core 2>&1 | tail -3; then
     register_mcp "apitap" "apitap-mcp"
     success "ApiTap installed (npm global: @apitap/core)"
   else
-    warn "Could not install ApiTap. Install manually: npm install -g @apitap/core"
+    warn "Could not install ApiTap. Install manually: npm install -g --ignore-scripts @apitap/core"
   fi
 }
 
@@ -1718,7 +1719,7 @@ install_github_skill() {
   fi
 
   # Install the OpenClaw GitHub skill
-  npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install github \
+  clawhub --workdir "$OPENCLAW_DIR/workspace" install github \
     && success "GitHub skill installed" \
     || { info "clawhub install failed — copying from bundled skills"; }
 
@@ -1745,7 +1746,7 @@ install_humanizer() {
     return
   fi
 
-  if npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install humanizer; then
+  if clawhub --workdir "$OPENCLAW_DIR/workspace" install humanizer; then
     success "Humanizer skill installed"
   else
     # Fallback to git clone
@@ -1753,7 +1754,7 @@ install_humanizer() {
     mkdir -p "$SKILLS_DIR"
     if git clone --depth 1 https://github.com/brandonwise/humanizer.git "$SKILLS_DIR/humanizer" 2>/dev/null; then
       # H-4: Pin to known-good commit (update hash when upgrading)
-      (cd "$SKILLS_DIR/humanizer" && git checkout "PLACEHOLDER_HUMANIZER_COMMIT_HASH" 2>/dev/null || warn "Could not pin humanizer to known commit — using HEAD")
+      (cd "$SKILLS_DIR/humanizer" && git checkout "a3fdb3d507c484464c738fe7810265c6dc2c381d" 2>/dev/null || warn "Could not pin humanizer to known commit — using HEAD")
       success "Humanizer installed from GitHub"
     else
       warn "Could not install Humanizer. Install manually: clawhub install humanizer"
@@ -1781,7 +1782,7 @@ install_self_improving() {
     return
   fi
 
-  if npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install self-improving; then
+  if clawhub --workdir "$OPENCLAW_DIR/workspace" install self-improving; then
     success "Self-Improving Agent skill installed"
   else
     warn "Could not install. Install manually: clawhub install self-improving"
@@ -1808,7 +1809,7 @@ install_find_skills() {
     return
   fi
 
-  if npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install find-skills; then
+  if clawhub --workdir "$OPENCLAW_DIR/workspace" install find-skills; then
     success "Find Skills installed"
   else
     warn "Could not install. Install manually: clawhub install find-skills"
@@ -1835,7 +1836,7 @@ install_marketing_skills() {
     return
   fi
 
-  if npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install marketing-skills; then
+  if clawhub --workdir "$OPENCLAW_DIR/workspace" install marketing-skills; then
     success "Marketing Skills installed"
   else
     warn "Could not install. Install manually: clawhub install marketing-skills"
@@ -1892,7 +1893,7 @@ install_playwright() {
     return
   fi
 
-  if npx --yes clawhub@latest --workdir "$OPENCLAW_DIR/workspace" install playwright-mcp; then
+  if clawhub --workdir "$OPENCLAW_DIR/workspace" install playwright-mcp; then
     success "Playwright MCP skill installed"
   else
     warn "clawhub install failed. Install manually: clawhub install playwright-mcp"
@@ -2260,6 +2261,15 @@ main() {
   info "The following are all optional. Press Enter to accept defaults."
   echo ""
 
+  # Pre-install clawhub globally with --ignore-scripts so skill installers
+  # don't need npx --yes (which auto-executes unverified packages)
+  if ! command -v clawhub &>/dev/null; then
+    info "Installing clawhub (skill marketplace)..."
+    npm install -g --ignore-scripts clawhub 2>/dev/null \
+      && success "clawhub installed" \
+      || warn "clawhub install failed — skill installs may fall back to git clone"
+  fi
+
   install_octave
   install_graphthulhu
   install_apitap
@@ -2286,7 +2296,7 @@ main() {
     else
       if git clone --depth 1 https://github.com/outsourc-e/clawsuite.git "$CONSOLE_DIR" 2>/dev/null; then
         # H-4: Pin to known-good commit (update hash when upgrading)
-        (cd "$CONSOLE_DIR" && git checkout "PLACEHOLDER_CLAWSUITE_COMMIT_HASH" 2>/dev/null || warn "Could not pin clawsuite to known commit — using HEAD")
+        (cd "$CONSOLE_DIR" && git checkout "a8f002e5ec83915eeb46df7cac308901ee8d6bf8" 2>/dev/null || warn "Could not pin clawsuite to known commit — using HEAD")
         success "ClawSuite Console cloned to $CONSOLE_DIR"
       else
         warn "Could not clone ClawSuite Console. Install manually:"
@@ -2370,7 +2380,8 @@ CONSOLEEOF
               if [ -n "$CADDY_TAG" ]; then
                 local CADDY_VER="${CADDY_TAG#v}"
                 local CADDY_URL="https://github.com/caddyserver/caddy/releases/download/${CADDY_TAG}/caddy_${CADDY_VER}_linux_${CADDY_ARCH}.tar.gz"
-                if curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL" 2>/dev/null; then
+                download_verified "$CADDY_URL" "/tmp/caddy.tar.gz" "SKIP"
+                if [ -f /tmp/caddy.tar.gz ]; then
                   tar xzf /tmp/caddy.tar.gz -C /tmp caddy 2>/dev/null
                   if [ -f /tmp/caddy ]; then
                     mv /tmp/caddy /usr/local/bin/caddy && chmod +x /usr/local/bin/caddy
@@ -2563,7 +2574,7 @@ CADDYEOF
     CLAWSEC_TMP="$(mktemp -d)"
     if git clone --depth 1 https://github.com/prompt-security/clawsec.git "$CLAWSEC_TMP" 2>/dev/null; then
       # H-4: Pin to known-good commit (update hash when upgrading)
-      (cd "$CLAWSEC_TMP" && git checkout "PLACEHOLDER_CLAWSEC_COMMIT_HASH" 2>/dev/null || warn "Could not pin clawsec to known commit — using HEAD")
+      (cd "$CLAWSEC_TMP" && git checkout "277c0abe17ee51be1171d3b7835fefc2dfa074e4" 2>/dev/null || warn "Could not pin clawsec to known commit — using HEAD")
       SKILLS_DIR="$OPENCLAW_DIR/skills"
       mkdir -p "$SKILLS_DIR"
       cp -r "$CLAWSEC_TMP/skills/clawsec-suite" "$SKILLS_DIR/" 2>/dev/null

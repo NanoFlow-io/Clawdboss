@@ -152,7 +152,7 @@ The setup wizard offers each of these individually. All are free and open-source
 
 | Tool | Purpose | Install Method |
 |------|---------|---------------|
-| **[Graphthulhu](https://github.com/scottozolmedia/graphthulhu)** | Knowledge graph memory (entities, relationships, constraints) | Binary / cargo |
+| **[Graphthulhu](https://github.com/skridlevsky/graphthulhu)** | Knowledge graph memory (entities, relationships, constraints) | Binary / cargo |
 | **[ApiTap](https://www.npmjs.com/package/@apitap/core)** | API discovery — intercepts web traffic, generates skill files | `npm install -g @apitap/core` |
 | **[Scrapling](https://github.com/D4Vinci/Scrapling)** | Anti-bot web scraping with adaptive selectors | `pip install scrapling` |
 | **[Playwright MCP](https://clawhub.com/playwright-mcp)** | Full browser automation (navigate, click, fill, screenshot) | `clawhub install` |

@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This report details the remediation actions taken in response to the external security audit of the Clawdboss repository. All 15 identified findings have been addressed: 13 have been fully remediated, and 2 have been partially addressed with clear documentation for remaining work.
+This report details the remediation actions taken in response to the external security audit of the Clawdboss repository. All 15 identified findings have been addressed: 12 have been fully remediated, and 3 have been partially addressed with clear documentation for remaining work.
 
 Changes span three primary files:
 - `setup.sh` — installation and deployment script
@@ -26,9 +26,9 @@ All changes were verified with `bash -n setup.sh` syntax validation.
 |---------|----------|--------|-------------|
 | C-1 | Critical | ✅ Fixed | Replace `curl \| bash` for NodeSource installer |
 | C-2 | Critical | ✅ Fixed | Replace `curl \| bash` for uv installer |
-| H-1 | High | ✅ Fixed | Add `--ignore-scripts` to npm global installs |
+| H-1 | High | ✅ Fixed | Add `--ignore-scripts` to all npm global installs |
 | H-2 | High | ✅ Fixed | Use Python venv instead of `--break-system-packages` |
-| H-3 | High | ✅ Fixed | Framework for checksum verification on downloads |
+| H-3 | High | ⚠️ Partial | Framework for checksum verification on downloads (checksums not yet pinned) |
 | H-4 | High | ✅ Fixed | Pin git clones to known-good commits |
 | H-5 | High | ✅ Fixed | Enforce `chmod 700` on `~/.openclaw` directory |
 | M-1 | Medium | ✅ Fixed | Hash Caddy password via stdin instead of `--plaintext` |
@@ -81,14 +81,16 @@ All changes were verified with `bash -n setup.sh` syntax validation.
 **Finding:** npm global installs ran postinstall scripts from untrusted packages, which could execute arbitrary code.
 
 **Remediation:**
-- Added `--ignore-scripts` flag to all `npm install -g` commands in `install_skill_deps()`:
+- Added `--ignore-scripts` flag to all `npm install -g` commands:
+  - `openclaw@latest` (main framework install)
+  - `@apitap/core` (API discovery tool)
   - `clawhub`
   - `mcporter`
   - `@google/gemini-cli`
   - `@steipete/oracle`
   - `@steipete/summarize`
   - `obsidian-cli`
-- These packages are CLI tools that don't require postinstall scripts for functionality
+- Replaced all `npx --yes clawhub@latest` calls with pre-installed `clawhub` binary (installed via `npm install -g --ignore-scripts`) to eliminate auto-execution of unverified packages
 
 **File:** `setup.sh` — `install_skill_deps()`
 
@@ -102,10 +104,11 @@ All changes were verified with `bash -n setup.sh` syntax validation.
   2. Computes SHA-256 hash
   3. Compares against an expected hash
   4. Supports `SKIP` mode with a warning for cases where checksums aren't yet pinned
-- The function is available for use by `gh_release_install()` and other download operations
-- Includes clear comments noting that checksums should be updated when versions change
+- The function is used by Graphthulhu binary downloads and Caddy binary downloads
+- Currently uses `SKIP` mode (warns but downloads) since upstream does not publish checksums
+- Includes clear comments noting that checksums should be pinned when available
 
-**File:** `setup.sh` — `download_verified()` function
+**File:** `setup.sh` — `download_verified()` function, `install_graphthulhu()`, Caddy installation
 
 #### M-6: Set Explicit mode: 0o700 on Database Directory
 
@@ -141,13 +144,13 @@ All changes were verified with `bash -n setup.sh` syntax validation.
 
 **Remediation:**
 - Added `git checkout` to a pinned commit hash after each `git clone --depth 1`:
-  - `humanizer` → `PLACEHOLDER_HUMANIZER_COMMIT_HASH`
-  - `clawsuite` → `PLACEHOLDER_CLAWSUITE_COMMIT_HASH`
-  - `clawsec` → `PLACEHOLDER_CLAWSEC_COMMIT_HASH`
-- Placeholder hashes are clearly marked for replacement with actual known-good commits
+  - `humanizer` → `a3fdb3d507c484464c738fe7810265c6dc2c381d`
+  - `clawsuite` → `a8f002e5ec83915eeb46df7cac308901ee8d6bf8`
+  - `clawsec` → `277c0abe17ee51be1171d3b7835fefc2dfa074e4`
+- All hashes verified against live repositories via `git ls-remote`
 - Falls back gracefully with a warning if the checkout fails (e.g., shallow clone limitation)
 
-**Note:** Placeholder hashes must be replaced with actual commit SHAs before production deployment. Use `git ls-remote` to obtain current HEAD hashes for each repository.
+**Note:** Commit hashes should be periodically updated as upstream repositories receive security-relevant changes.
 
 **File:** `setup.sh` — `install_humanizer()`, Console installation, ClawSec installation
 
@@ -272,8 +275,6 @@ All changes were verified with `bash -n setup.sh` syntax validation.
 
 ## Items Requiring Follow-Up
 
-1. **H-4 (Git Commit Pinning):** Placeholder commit hashes (`PLACEHOLDER_*_COMMIT_HASH`) must be replaced with actual known-good commit SHAs before production deployment. Run `git ls-remote` against each repository to obtain current hashes.
+1. **H-3 (Download Checksums):** The `download_verified()` helper is wired into Graphthulhu and Caddy binary downloads but currently uses `SKIP` mode. Pin SHA-256 checksums when upstream projects publish them or when versions are locked.
 
-2. **H-3 (Download Checksums):** The `download_verified()` helper is available but most downloads currently use `SKIP` mode. Pin SHA-256 checksums for critical binary downloads as they are identified and version-locked.
-
-3. **TypeScript Compilation:** The `index.ts` changes should be verified through the project's TypeScript build pipeline to ensure no type errors were introduced.
+2. **TypeScript Compilation:** The `index.ts` changes should be verified through the project's TypeScript build pipeline to ensure no type errors were introduced.

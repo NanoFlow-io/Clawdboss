@@ -34,7 +34,7 @@ cargo install graphthulhu
 
 # OR download pre-built binary from GitHub releases
 curl -fsSL -o ~/.local/bin/graphthulhu \
-  https://github.com/scottozolmedia/graphthulhu/releases/latest/download/graphthulhu-linux-x86_64
+  https://github.com/skridlevsky/graphthulhu/releases/latest/download/graphthulhu-linux-x86_64
 chmod +x ~/.local/bin/graphthulhu
 ```
 
@@ -46,7 +46,7 @@ mcporter config add graphthulhu --command "graphthulhu serve --backend obsidian 
 ```
 
 **Links:**
-- GitHub: <https://github.com/scottozolmedia/graphthulhu>
+- GitHub: <https://github.com/skridlevsky/graphthulhu>
 
 ---
 
