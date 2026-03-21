@@ -252,14 +252,36 @@ preflight() {
   command -v python3 &>/dev/null || missing_pkgs="$missing_pkgs python3"
   command -v make &>/dev/null || missing_pkgs="$missing_pkgs build-essential"
   command -v pip3 &>/dev/null || missing_pkgs="$missing_pkgs python3-pip"
-  python3 -c "import ensurepip" &>/dev/null 2>&1 || missing_pkgs="$missing_pkgs python3-venv"
+  if ! python3 -c "import ensurepip" &>/dev/null 2>&1; then
+    missing_pkgs="$missing_pkgs python3-venv"
+  fi
 
   if [ -n "$missing_pkgs" ]; then
     info "Installing dependencies:$missing_pkgs"
-    apt-get update -qq 2>/dev/null
-    apt-get install -y $missing_pkgs 2>/dev/null \
-      && success "Dependencies installed" \
-      || warn "Could not auto-install some packages. Install manually: sudo apt-get install -y$missing_pkgs"
+    info "Running apt-get update first..."
+    sudo apt-get update -qq 2>/dev/null || apt-get update -qq 2>/dev/null || true
+    if ! sudo apt-get install -y $missing_pkgs 2>/dev/null && ! apt-get install -y $missing_pkgs 2>/dev/null; then
+      # If python3-venv failed, try python3-full as fallback (some Ubuntu versions need it)
+      if echo "$missing_pkgs" | grep -q "python3-venv"; then
+        info "python3-venv failed, trying python3-full as fallback..."
+        if ! sudo apt-get install -y python3-full 2>/dev/null && ! apt-get install -y python3-full 2>/dev/null; then
+          error "Failed to install required packages:$missing_pkgs"
+          echo ""
+          echo "  Please install manually and re-run setup:"
+          echo "    sudo apt-get update && sudo apt-get install -y$missing_pkgs"
+          echo ""
+          echo "  If python3-venv is unavailable, try: sudo apt-get install -y python3-full"
+          exit 1
+        fi
+      else
+        error "Failed to install required packages:$missing_pkgs"
+        echo ""
+        echo "  Please install manually and re-run setup:"
+        echo "    sudo apt-get update && sudo apt-get install -y$missing_pkgs"
+        exit 1
+      fi
+    fi
+    success "Dependencies installed"
   fi
 
   if ! command -v openclaw &>/dev/null; then
@@ -1056,6 +1078,20 @@ else:
 # Agent allow list
 allow_agents = ["main"]
 
+# Determine specialist agent model based on LLM provider
+specialist_model_map = {
+    "copilot": "copilot/claude-sonnet-4.5",
+    "openai": "openai/gpt-4.1-mini",
+    "openai-codex-oauth": "openai-codex/gpt-4.1",
+    "anthropic": "anthropic/claude-sonnet-4-5-20250514",
+    "anthropic-oauth": "anthropic/claude-sonnet-4-5-20250514",
+    "gemini": "google/gemini-2.5-flash",
+    "gemini-cli-oauth": "google-gemini-cli/gemini-2.5-flash",
+    "openrouter": "openrouter/anthropic/claude-sonnet-4",
+    "kimi": "kimi/moonshot-v1-128k",
+}
+specialist_model = specialist_model_map.get(llm_provider, "copilot/claude-sonnet-4.5")
+
 # Specialist agents
 if deploy_comms:
     comms_name = os.environ.get('CB_COMMS_NAME', 'Knox')
@@ -1069,7 +1105,7 @@ if deploy_comms:
         "name": comms_name,
         "workspace": comms_workspace,
         "agentDir": os.path.join(openclaw_dir, "agents", comms_id, "agent"),
-        "model": {"primary": "copilot/claude-sonnet-4.5"},
+        "model": {"primary": specialist_model},
         "identity": {"name": comms_name, "emoji": "\U0001f4e1"}
     })
 
@@ -1093,7 +1129,7 @@ if deploy_research:
         "name": research_name,
         "workspace": research_workspace,
         "agentDir": os.path.join(openclaw_dir, "agents", research_id, "agent"),
-        "model": {"primary": "copilot/claude-sonnet-4.5"},
+        "model": {"primary": specialist_model},
         "identity": {"name": research_name, "emoji": "\U0001f50d"}
     })
 
@@ -1117,7 +1153,7 @@ if deploy_security:
         "name": security_name,
         "workspace": security_workspace,
         "agentDir": os.path.join(openclaw_dir, "agents", security_id, "agent"),
-        "model": {"primary": "copilot/claude-sonnet-4.5"},
+        "model": {"primary": specialist_model},
         "identity": {"name": security_name, "emoji": "\U0001f6e1\ufe0f"}
     })
 
@@ -1212,6 +1248,7 @@ elif llm_provider == "openai-codex-oauth":
     # No provider config needed — built-in pi-ai catalog handles it
     # OAuth login happens post-setup via openclaw models auth login
     config['agents']['defaults']['model']['primary'] = "openai-codex/gpt-4.1"
+    config['agents']['defaults']['heartbeat']['model'] = "openai-codex/gpt-4.1-mini"
 elif llm_provider == "gemini-cli-oauth":
     # OAuth login happens post-setup via openclaw models auth login
     config['agents']['defaults']['model']['primary'] = "google-gemini-cli/gemini-2.5-pro"
@@ -1508,9 +1545,15 @@ install_octave() {
     # Ensure python3-venv is available (Ubuntu/Debian need it separately)
     if ! python3 -c "import ensurepip" &>/dev/null; then
       info "Installing python3-venv (required for virtual environments)..."
-      apt-get install -y python3-venv 2>/dev/null \
-        || apt-get install -y "python3.$(python3 -c 'import sys;print(sys.version_info.minor)')-venv" 2>/dev/null \
-        || { warn "Could not install python3-venv. Run: sudo apt install python3-venv"; return; }
+      sudo apt-get update -qq 2>/dev/null || true
+      if ! sudo apt-get install -y python3-venv 2>/dev/null \
+        && ! sudo apt-get install -y "python3.$(python3 -c 'import sys;print(sys.version_info.minor)')-venv" 2>/dev/null \
+        && ! sudo apt-get install -y python3-full 2>/dev/null; then
+        error "Could not install python3-venv."
+        echo "  Run manually: sudo apt-get update && sudo apt-get install -y python3-venv"
+        echo "  Or try: sudo apt-get install -y python3-full"
+        return
+      fi
     fi
     info "Installing OCTAVE via python3 venv..."
     python3 -m venv "$OCTAVE_VENV"
@@ -2675,48 +2718,65 @@ JAIL_EOF
   echo ""
   echo -e "${BOLD}--- Memory Hybrid Plugin ---${NC}"
   echo ""
-  info "Installing memory-hybrid plugin (SQLite + LanceDB two-tier memory)..."
-  info "This gives your agent structured fact storage + semantic vector search."
+  info "memory-hybrid provides structured fact storage + semantic vector search."
+  info "It requires an OpenAI API key for embeddings (not available via OAuth subscriptions)."
   echo ""
 
-  local EXTENSIONS_DIR
-  EXTENSIONS_DIR="$(npm root -g)/openclaw/extensions/memory-hybrid"
-
-  if [ -d "$EXTENSIONS_DIR" ] && [ -f "$EXTENSIONS_DIR/index.ts" ]; then
-    info "memory-hybrid already installed at $EXTENSIONS_DIR"
+  local INSTALL_MEMORY_HYBRID="n"
+  if [ -n "${OPENAI_SKILLS_KEY:-}" ]; then
+    ask "Install memory-hybrid plugin (semantic memory with embeddings)? Requires an OpenAI API key for embeddings. [y/N]"
+    read -r INSTALL_MEMORY_HYBRID
   else
-    local SCRIPT_DIR
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local BUNDLED="$SCRIPT_DIR/extensions/memory-hybrid"
-
-    if [ -d "$BUNDLED" ] && [ -f "$BUNDLED/index.ts" ]; then
-      mkdir -p "$EXTENSIONS_DIR"
-      cp "$BUNDLED"/{package.json,openclaw.plugin.json,config.ts,index.ts} "$EXTENSIONS_DIR/"
-      success "memory-hybrid plugin files copied to $EXTENSIONS_DIR"
-    else
-      warn "Bundled memory-hybrid files not found. Plugin may not work."
-    fi
+    warn "No OpenAI API key was provided. Embeddings for memory-hybrid require an API key."
+    ask "Install memory-hybrid plugin anyway? (It won't work without an OpenAI API key) [y/N]"
+    read -r INSTALL_MEMORY_HYBRID
   fi
 
-  # Install dependencies
-  if [ -d "$EXTENSIONS_DIR" ]; then
-    info "Installing memory-hybrid npm dependencies..."
-    (cd "$EXTENSIONS_DIR" && npm install --silent 2>&1 | tail -3) \
-      && success "memory-hybrid dependencies installed" \
-      || warn "npm install failed in $EXTENSIONS_DIR — run manually: cd $EXTENSIONS_DIR && npm install"
+  if [[ "$INSTALL_MEMORY_HYBRID" =~ ^[Yy] ]]; then
+    info "Installing memory-hybrid plugin..."
 
-    # Also install better-sqlite3 in the OpenClaw state dir
-    local OPENCLAW_STATE_DIR="$HOME/.openclaw"
-    if [ ! -f "$OPENCLAW_STATE_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" ]; then
-      info "Installing better-sqlite3 in $OPENCLAW_STATE_DIR..."
-      (cd "$OPENCLAW_STATE_DIR" && npm install better-sqlite3 --silent 2>&1 | tail -3) \
-        && success "better-sqlite3 installed" \
-        || warn "better-sqlite3 install failed — run: cd $OPENCLAW_STATE_DIR && npm install better-sqlite3"
+    local EXTENSIONS_DIR
+    EXTENSIONS_DIR="$(npm root -g)/openclaw/extensions/memory-hybrid"
+
+    if [ -d "$EXTENSIONS_DIR" ] && [ -f "$EXTENSIONS_DIR/index.ts" ]; then
+      info "memory-hybrid already installed at $EXTENSIONS_DIR"
+    else
+      local SCRIPT_DIR
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      local BUNDLED="$SCRIPT_DIR/extensions/memory-hybrid"
+
+      if [ -d "$BUNDLED" ] && [ -f "$BUNDLED/index.ts" ]; then
+        mkdir -p "$EXTENSIONS_DIR"
+        cp "$BUNDLED"/{package.json,openclaw.plugin.json,config.ts,index.ts} "$EXTENSIONS_DIR/"
+        success "memory-hybrid plugin files copied to $EXTENSIONS_DIR"
+      else
+        warn "Bundled memory-hybrid files not found. Plugin may not work."
+      fi
     fi
 
-    # Create memory directory
-    mkdir -p "$OPENCLAW_STATE_DIR/memory"
-    success "Memory directory ready: $OPENCLAW_STATE_DIR/memory"
+    # Install dependencies
+    if [ -d "$EXTENSIONS_DIR" ]; then
+      info "Installing memory-hybrid npm dependencies..."
+      (cd "$EXTENSIONS_DIR" && npm install --silent 2>&1 | tail -3) \
+        && success "memory-hybrid dependencies installed" \
+        || warn "npm install failed in $EXTENSIONS_DIR — run manually: cd $EXTENSIONS_DIR && npm install"
+
+      # Also install better-sqlite3 in the OpenClaw state dir
+      local OPENCLAW_STATE_DIR="$HOME/.openclaw"
+      if [ ! -f "$OPENCLAW_STATE_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" ]; then
+        info "Installing better-sqlite3 in $OPENCLAW_STATE_DIR..."
+        (cd "$OPENCLAW_STATE_DIR" && npm install better-sqlite3 --silent 2>&1 | tail -3) \
+          && success "better-sqlite3 installed" \
+          || warn "better-sqlite3 install failed — run: cd $OPENCLAW_STATE_DIR && npm install better-sqlite3"
+      fi
+
+      # Create memory directory
+      mkdir -p "$OPENCLAW_STATE_DIR/memory"
+      success "Memory directory ready: $OPENCLAW_STATE_DIR/memory"
+    fi
+  else
+    info "Skipping memory-hybrid plugin installation."
+    info "You can install it later by re-running setup or following the docs."
   fi
 
   # ---- Built-in Skills Dependencies ----
@@ -3061,23 +3121,31 @@ install_skill_deps() {
 
   # --- openai-whisper (local speech-to-text) ---
   if ! command -v whisper &>/dev/null; then
-    info "Installing openai-whisper (local STT)..."
-    if command -v uv &>/dev/null; then
-      uv tool install openai-whisper 2>/dev/null \
-        && success "openai-whisper installed" && INSTALLED=$((INSTALLED + 1)) \
-        || { warn "openai-whisper install failed (may need PyTorch)"; FAILED=$((FAILED + 1)); }
-    elif command -v pip3 &>/dev/null; then
-      # H-2: Use venv instead of --break-system-packages
-      local SKILL_VENV="$HOME/.openclaw/venvs/skill-deps"
-      if [ ! -d "$SKILL_VENV" ]; then
-        python3 -m venv "$SKILL_VENV" 2>/dev/null || { warn "Could not create venv"; FAILED=$((FAILED + 1)); }
+    echo ""
+    ask "Install openai-whisper (local speech-to-text)? This requires ~2GB download. [y/N]"
+    read -r INSTALL_WHISPER
+    if [[ "$INSTALL_WHISPER" =~ ^[Yy] ]]; then
+      info "Installing openai-whisper (local STT)..."
+      if command -v uv &>/dev/null; then
+        uv tool install openai-whisper 2>/dev/null \
+          && success "openai-whisper installed" && INSTALLED=$((INSTALLED + 1)) \
+          || { warn "openai-whisper install failed (may need PyTorch)"; FAILED=$((FAILED + 1)); }
+      elif command -v pip3 &>/dev/null; then
+        # H-2: Use venv instead of --break-system-packages
+        local SKILL_VENV="$HOME/.openclaw/venvs/skill-deps"
+        if [ ! -d "$SKILL_VENV" ]; then
+          python3 -m venv "$SKILL_VENV" 2>/dev/null || { warn "Could not create venv"; FAILED=$((FAILED + 1)); }
+        fi
+        "$SKILL_VENV/bin/pip" install openai-whisper 2>/dev/null \
+          && { ln -sf "$SKILL_VENV/bin/whisper" "$BIN_DIR/whisper" 2>/dev/null; success "openai-whisper installed (venv)"; INSTALLED=$((INSTALLED + 1)); } \
+          || { warn "openai-whisper install failed"; FAILED=$((FAILED + 1)); }
+      else
+        warn "Skipping openai-whisper (no uv or pip3)"
+        FAILED=$((FAILED + 1))
       fi
-      "$SKILL_VENV/bin/pip" install openai-whisper 2>/dev/null \
-        && { ln -sf "$SKILL_VENV/bin/whisper" "$BIN_DIR/whisper" 2>/dev/null; success "openai-whisper installed (venv)"; INSTALLED=$((INSTALLED + 1)); } \
-        || { warn "openai-whisper install failed"; FAILED=$((FAILED + 1)); }
     else
-      warn "Skipping openai-whisper (no uv or pip3)"
-      FAILED=$((FAILED + 1))
+      info "Skipping openai-whisper installation."
+      SKIPPED=$((SKIPPED + 1))
     fi
   else
     success "openai-whisper ✓"
